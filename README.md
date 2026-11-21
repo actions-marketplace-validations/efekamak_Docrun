@@ -1,78 +1,97 @@
 # docrun
 
-Execute declared Node/npm quickstart contracts (`docrun.json`) in a fresh temporary workspace, publish live verification checks, and turn failures into evidence-backed maintainer reports using Cursor's Agent SDK (`@grok/agent-sdk`).
+[![docrun live status](https://img.shields.io/endpoint?url=https%3A%2F%2Fefekamak.github.io%2FDocrun%2Fbadges%2Foverall.json)](https://efekamak.github.io/Docrun/)
+
+Execute declared Node/npm quickstart contracts (`docrun.json`) in fresh temporary workspaces on Ubuntu and Windows, publish live cross-platform verification results, and turn failures into evidence-backed maintainer reports using Cursor's Agent SDK (`@grok/agent-sdk`).
 
 **Live quickstart checks:** [efekamak.github.io/Docrun](https://efekamak.github.io/Docrun/)
 
 ## 1. What problem does this solve?
 
-Unit tests often pass in a maintainer's repository while the published quickstart fails for a new user:
+Unit tests often pass in a maintainer's repository while the published quickstart fails for a new user on Linux or Windows:
 
 - an outdated package version or import path in the README;
-- a missing export or broken entrypoint in the published package;
+- a missing export, CLI spawn failure, or broken entrypoint in the published package;
 - a command that exits `0` but no longer produces the documented output or file.
 
 `docrun` runs a small declared install path from a fresh temporary workspace, stops at the first failing step, captures bounded and redacted evidence, and lets an Agent SDK agent produce a short maintainer report from that evidence.
 
 ## 2. Live quickstart catalog
 
-`catalog/targets.json` declares 5 real AI/TypeScript SDK install paths tested daily on an ephemeral GitHub-hosted runner with no repository secrets:
+`catalog/targets.json` declares 10 real JS/TS SDK install paths tested daily on ephemeral Ubuntu and Windows GitHub-hosted runners (Node.js 24) with no repository secrets:
 
-- **Cursor Agent SDK** (`@grok/agent-sdk`): install + validate a minimal local agent
+- **Cursor Agent SDK** (`@grok/agent-sdk`): install + scaffold a local agent + validate
 - **Anthropic TypeScript SDK** (`@anthropic-ai/sdk`): install + import + client instantiation
 - **OpenAI JavaScript SDK** (`openai`): install + import + client instantiation
 - **MCP TypeScript SDK** (`@modelcontextprotocol/sdk`): install + import + `McpServer` registration
 - **Vercel AI SDK** (`ai`): install + import + core API exports
+- **Google Gen AI SDK** (`@google/genai`): install + import + local client construction
+- **LangChain JS** (`langchain`): install + import + local `HumanMessage` primitive
+- **Supabase JS** (`@supabase/supabase-js`): install + import + local client with background auth disabled
+- **Stripe Node SDK** (`stripe`): install + import + local client construction
+- **Resend Node SDK** (`resend`): install + import + local client construction
 
-Each row on the status page reports only what its declared contract ran, not full SDK health or paid API calls.
+Each row on the status page reports only what its declared contract ran on the recorded Ubuntu and Windows runners, not full SDK health, paid API calls, or uptime/SLA.
+
+Published static data on GitHub Pages:
+
+- `status.json`: schema v2 aggregate document with per-platform results, exact installed versions, OS/Node/npm metadata, version drift flags, and redacted step evidence.
+- `history.json`: best-effort 7-day UTC snapshot history (compact statuses and resolved versions only, no stdout/stderr).
+- `badges/overall.json` and `badges/<target-id>-<ubuntu|windows>.json`: Shields endpoint JSON files.
 
 ## 3. Run locally
 
-Requirements: Node.js 20+ and npm.
+Requirements: Node.js 22.13+ (Node.js 24 used in CI and live checks) and npm.
 
 ```bash
 npm ci
 npm run check
+node --check site/app.js
 npm test
 npm run validate
 npm run catalog:validate
 ```
 
-Run the live catalog and build the static status site locally:
+Run the live catalog for the current OS, aggregate results, and build the static status site locally:
 
 ```bash
+# Runs the 10 contracts on the current host OS (writes generated/platform-<os>.json)
 npm run catalog:run
+
+# Combine platform partial artifacts into generated/status.json, history.json, and badges/
+npm run status:aggregate -- --windows=generated/platform-windows.json --no-history-fetch
+
+# Validate schema v2 output and build dist-site/
 npm run site:build
-# Output written to dist-site/
 ```
 
 Call the deterministic runner tool directly (no Cursor API key required):
 
 ```bash
 # Passing fixture
-npx --yes "@grok/agent-sdk@0.7.2" tool call run_quickstart --dir . \
+npx --no-install agent-sdk tool call run_quickstart --dir . \
   --input '{"contractPath":"fixtures/passing/docrun.json"}'
 
 # Failing fixture
-npx --yes "@grok/agent-sdk@0.7.2" tool call run_quickstart --dir . \
+npx --no-install agent-sdk tool call run_quickstart --dir . \
   --input '{"contractPath":"fixtures/failing/docrun.json"}'
 ```
 
 Run a full agent turn or open the local playground (requires `agent-sdk login` or `CURSOR_API_KEY`):
 
 ```bash
-npx --yes "@grok/agent-sdk@0.7.2" run --dir . \
+npx --no-install agent-sdk run --dir . \
   --message "Run the quickstart at fixtures/failing/docrun.json and write a maintainer report."
 
-npx --yes "@grok/agent-sdk@0.7.2" dev .
+npx --no-install agent-sdk dev .
 # Open http://127.0.0.1:3000/playground
 ```
 
 Run evals:
 
 ```bash
-npx --yes "@grok/agent-sdk@0.7.2" eval --dir . --list
-npx --yes "@grok/agent-sdk@0.7.2" eval --dir .
+npx --no-install agent-sdk eval --dir . --list
+npx --no-install agent-sdk eval --dir .
 ```
 
 ## 4. Contract format
@@ -112,8 +131,8 @@ Validation rules:
 
 ## 5. Safety limitations
 
-- **Not a security sandbox.** `npm install` can run package lifecycle scripts as the current OS user. A fresh temporary directory isolates files and `npm_config_cache` from your repository, not from the host OS.
-- Scheduled status checks run on ephemeral GitHub-hosted runners with `contents: read` and zero repository secrets; pull-request CI never executes third-party catalog contracts.
+- **Not a security sandbox.** `npm install` can run package lifecycle scripts as the current OS user. A fresh temporary directory isolates files, `npm_config_cache`, and `npm_config_userconfig` from your repository, not from the host OS.
+- Scheduled status checks run on ephemeral GitHub-hosted Ubuntu and Windows runners with `contents: read`, `persist-credentials: false`, SHA-pinned actions, and zero repository secrets. Pull-request CI validates schemas and runs local fixtures only; it never executes third-party catalog contracts.
 - Output is bounded, stripped of ANSI codes, scrubbed of local temp/user paths, and redacted for common token patterns before publishing or passing to the model.
 
 ## 6. How Cursor Agent SDK participates
