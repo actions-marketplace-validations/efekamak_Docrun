@@ -1,6 +1,6 @@
 {
   "name": "docrun",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Execute a declared package quickstart contract in a fresh temporary workspace and turn failures into evidence-backed maintainer reports.",
@@ -11,6 +11,7 @@
     "validate": "agent-sdk validate --dir .",
     "catalog:validate": "node --import tsx scripts/validate-catalog.ts",
     "catalog:run": "node --import tsx scripts/run-catalog.ts",
+    "status:aggregate": "node --import tsx scripts/aggregate-status.ts",
     "site:build": "node --import tsx scripts/build-status-site.ts",
     "dev": "agent-sdk dev"
   },

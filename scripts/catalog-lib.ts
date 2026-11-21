@@ -16,13 +16,21 @@ import {
   type AssertionResult,
   type QuickstartRunResult,
 } from "../bot/lib/execute.js";
+import { CATALOG_LIMITS } from "./catalog-limits.js";
+import { ShieldsEndpointSchema, generateBadges, writeBadges } from "./badges.js";
+import { HistoryDocumentSchema } from "./history.js";
+import { collectPlatformEnvironment } from "./platform-metadata.js";
+import {
+  AggregateStatusDocumentSchema,
+  PlatformRunDocumentSchema,
+  summarizePlatformRun,
+  toPlatformPartialTarget,
+  type PlatformEnvironment,
+  type PlatformId,
+  type PlatformRunDocument,
+} from "./status-v2.js";
 
-export const CATALOG_LIMITS = {
-  MAX_TARGETS: 10,
-  MAX_CONCURRENCY: 2,
-  MAX_CATALOG_TIMEOUT_MS: 15 * 60 * 1000,
-  PUBLIC_EXCERPT_BYTES: 8 * 1024,
-} as const;
+export { CATALOG_LIMITS };
 
 export const ALLOWED_CATALOG_NPM_SUBCOMMANDS = ["install", "list", "exec"] as const;
 
@@ -527,42 +535,86 @@ export async function runCatalog(options: RunCatalogOptions): Promise<StatusDocu
   };
 }
 
-export const StatusDocumentSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    generatedAt: z.string().min(1),
-    sourceCommit: z.string().nullable(),
-    summary: z.object({
-      total: z.number().int().nonnegative(),
-      passed: z.number().int().nonnegative(),
-      failed: z.number().int().nonnegative(),
-      infraErrors: z.number().int().nonnegative(),
-      notRun: z.number().int().nonnegative(),
-    }),
-    targets: z.array(
-      z.object({
-        id: z.string().min(1),
-        name: z.string().min(1),
-        package: z.string().min(1),
-        status: z.enum(["passed", "failed", "infra_error", "not_run"]),
-        docsUrl: HttpsUrlSchema,
-        repositoryUrl: HttpsUrlSchema,
-      }).passthrough(),
-    ),
-  })
-  .passthrough();
+export type RunPlatformCatalogOptions = RunCatalogOptions & {
+  platform: PlatformId;
+  hostPlatform?: NodeJS.Platform;
+  environment?: PlatformEnvironment;
+};
+
+export async function runPlatformCatalog(
+  options: RunPlatformCatalogOptions,
+): Promise<PlatformRunDocument> {
+  const environment =
+    options.environment ??
+    (await collectPlatformEnvironment(options.platform, {
+      hostPlatform: options.hostPlatform,
+    }));
+
+  const legacyResult = await runCatalog(options);
+  const targets = legacyResult.targets.map((t) => toPlatformPartialTarget(t.id, t));
+
+  return PlatformRunDocumentSchema.parse({
+    schemaVersion: 2,
+    kind: "platform-run",
+    platform: options.platform,
+    generatedAt: legacyResult.generatedAt,
+    sourceCommit: legacyResult.sourceCommit,
+    environment,
+    summary: summarizePlatformRun(targets),
+    targets,
+  });
+}
+
+const SAFE_BADGE_FILENAME_REGEX = /^[a-z0-9][a-z0-9_-]{0,80}\.json$/;
 
 export async function buildStatusSite(options: {
   siteSrcDir: string;
   statusJsonPath: string;
+  historyJsonPath?: string;
+  badgesDir?: string;
   outDir: string;
 }): Promise<void> {
   const statusText = await fs.readFile(options.statusJsonPath, "utf8");
-  const parsed = StatusDocumentSchema.safeParse(JSON.parse(statusText));
-  if (!parsed.success) {
+  let parsedStatusJson: unknown;
+  try {
+    parsedStatusJson = JSON.parse(statusText);
+  } catch (err) {
     throw new Error(
-      `Invalid status.json schema: ${parsed.error.issues.map((i) => `${i.path.join(".") || "root"}: ${i.message}`).join("; ")}`,
+      `Invalid JSON in status.json: ${err instanceof Error ? err.message : String(err)}`,
     );
+  }
+
+  const parsedStatus = AggregateStatusDocumentSchema.safeParse(parsedStatusJson);
+  if (!parsedStatus.success) {
+    throw new Error(
+      `Invalid status.json schema (v2 required): ${parsedStatus.error.issues
+        .slice(0, 5)
+        .map((i) => `${i.path.join(".") || "root"}: ${i.message}`)
+        .join("; ")}`,
+    );
+  }
+
+  let validatedHistoryText: string | null = null;
+  if (options.historyJsonPath) {
+    const historyText = await fs.readFile(options.historyJsonPath, "utf8");
+    let parsedHistoryJson: unknown;
+    try {
+      parsedHistoryJson = JSON.parse(historyText);
+    } catch (err) {
+      throw new Error(
+        `Invalid JSON in history.json: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    const parsedHistory = HistoryDocumentSchema.safeParse(parsedHistoryJson);
+    if (!parsedHistory.success) {
+      throw new Error(
+        `Invalid history.json schema: ${parsedHistory.error.issues
+          .slice(0, 5)
+          .map((i) => `${i.path.join(".") || "root"}: ${i.message}`)
+          .join("; ")}`,
+      );
+    }
+    validatedHistoryText = `${JSON.stringify(parsedHistory.data, null, 2)}\n`;
   }
 
   await fs.rm(options.outDir, { recursive: true, force: true });
@@ -577,6 +629,37 @@ export async function buildStatusSite(options: {
     );
   }
 
-  await fs.writeFile(path.join(options.outDir, "status.json"), statusText, "utf8");
+  await fs.writeFile(
+    path.join(options.outDir, "status.json"),
+    `${JSON.stringify(parsedStatus.data, null, 2)}\n`,
+    "utf8",
+  );
+
+  if (validatedHistoryText !== null) {
+    await fs.writeFile(path.join(options.outDir, "history.json"), validatedHistoryText, "utf8");
+  }
+
+  const outBadgesDir = path.join(options.outDir, "badges");
+  if (options.badgesDir) {
+    const badgeEntries = await fs.readdir(options.badgesDir, { withFileTypes: true });
+    await fs.mkdir(outBadgesDir, { recursive: true });
+    for (const entry of badgeEntries) {
+      if (!entry.isFile()) continue;
+      if (!SAFE_BADGE_FILENAME_REGEX.test(entry.name)) {
+        throw new Error(`Unsafe badge filename in badgesDir: "${entry.name}"`);
+      }
+      const rawBadge = await fs.readFile(path.join(options.badgesDir, entry.name), "utf8");
+      const validatedBadge = ShieldsEndpointSchema.parse(JSON.parse(rawBadge));
+      await fs.writeFile(
+        path.join(outBadgesDir, entry.name),
+        `${JSON.stringify(validatedBadge, null, 2)}\n`,
+        "utf8",
+      );
+    }
+  } else {
+    const badges = generateBadges(parsedStatus.data);
+    await writeBadges(outBadgesDir, badges);
+  }
+
   await fs.writeFile(path.join(options.outDir, ".nojekyll"), "", "utf8");
 }

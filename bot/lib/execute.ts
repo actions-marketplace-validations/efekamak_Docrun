@@ -209,7 +209,7 @@ async function fileExists(targetPath: string): Promise<boolean> {
   }
 }
 
-async function resolveExecutable(
+export async function resolveExecutable(
   command: AllowedCommand,
   args: string[],
 ): Promise<{ execPath: string; execArgs: string[] }> {
