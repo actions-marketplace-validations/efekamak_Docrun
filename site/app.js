@@ -8,6 +8,7 @@ const VALID_AGGREGATE_STATUSES = new Set(["passed", "failed", "infra_error", "in
 const VALID_PLATFORM_STATUSES = new Set(["passed", "failed", "infra_error", "not_run"]);
 const VALID_STEP_STATUSES = new Set(["passed", "failed", "timed_out", "skipped"]);
 const SAFE_SLUG_REGEX = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 function sanitizeStatus(status, allowedSet, fallback) {
   return typeof status === "string" && allowedSet.has(status) ? status : fallback;
@@ -115,6 +116,87 @@ function el(tag, className, text) {
   if (className) node.className = className;
   if (text !== undefined && text !== null) node.textContent = text;
   return node;
+}
+
+function createDisclosureChevron() {
+  const wrap = el("span", "disclosure-icon");
+  wrap.setAttribute("aria-hidden", "true");
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("fill", "none");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", "M6 3.5L10.5 8L6 12.5");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.75");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(path);
+  wrap.appendChild(svg);
+  return wrap;
+}
+
+function createCopyButton(textToCopy, ariaLabel) {
+  const btn = el("button", "copy-btn", "Copy");
+  btn.type = "button";
+  btn.setAttribute("aria-label", ariaLabel);
+  let timer = null;
+  btn.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      btn.textContent = "Copied";
+      btn.classList.add("is-copied");
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        btn.textContent = "Copy";
+        btn.classList.remove("is-copied");
+      }, 1600);
+    } catch {
+      // Clipboard write unavailable in this context.
+    }
+  });
+  return btn;
+}
+
+function extractInlineFailureHint(result) {
+  if (!result || result.status !== "failed") {
+    return null;
+  }
+  const failedStep = Array.isArray(result.steps)
+    ? result.steps.find((s) => s && s.id === result.firstFailedStepId) ??
+      result.steps.find((s) => s && (s.status === "failed" || s.status === "timed_out"))
+    : null;
+  const parts = [];
+  if (result.firstFailedStepId) {
+    parts.push(result.firstFailedStepId);
+  }
+  if (result.failureCategory) {
+    parts.push(result.failureCategory);
+  }
+  if (failedStep) {
+    const raw = (failedStep.stderr || failedStep.stdout || "").trim();
+    if (raw) {
+      let detail = "";
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.error?.message === "string") {
+          detail = parsed.error.message;
+        }
+      } catch {
+        detail = raw.split(/\r?\n/).find((line) => line.trim().length > 0) || "";
+      }
+      detail = detail.trim();
+      if (detail) {
+        parts.push(detail.length > 72 ? `${detail.slice(0, 71)}...` : detail);
+      }
+    }
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /**
@@ -279,6 +361,13 @@ function renderProofStrip(platformId, result) {
   steps.forEach((step, idx) => {
     const safeStepStatus = sanitizeStatus(step.status, VALID_STEP_STATUSES, "skipped");
     const stepWrap = el("div", `proof-step is-${safeStepStatus}`);
+
+    if (idx > 0) {
+      const sep = el("span", "proof-sep", "›");
+      sep.setAttribute("aria-hidden", "true");
+      stepWrap.appendChild(sep);
+    }
+
     const node = el("div", "proof-node");
     const pill = el("span", "proof-pill", `${statusSymbol(safeStepStatus)} ${step.id}`);
     node.appendChild(pill);
@@ -288,13 +377,6 @@ function renderProofStrip(platformId, result) {
     }
 
     stepWrap.appendChild(node);
-
-    if (idx < steps.length - 1) {
-      const connector = el("span", "proof-connector");
-      connector.setAttribute("aria-hidden", "true");
-      stepWrap.appendChild(connector);
-    }
-
     strip.appendChild(stepWrap);
   });
 
@@ -322,6 +404,14 @@ function renderPlatformSummaryCell(platformId, result) {
 
   cell.appendChild(head);
   cell.appendChild(renderProofStrip(platformId, result));
+
+  const failureHint = extractInlineFailureHint(result);
+  if (failureHint) {
+    const hintEl = el("p", "failure-inline-hint", failureHint);
+    hintEl.title = failureHint;
+    cell.appendChild(hintEl);
+  }
+
   return cell;
 }
 
@@ -367,8 +457,8 @@ function renderHistoryStrip(targetId, matching) {
     dayEl.setAttribute("aria-label", summaryText);
 
     dayEl.appendChild(el("span", "history-date", formatShortUtcDate(date)));
-    dayEl.appendChild(el("span", `history-chip is-${uStatus}`, `U${statusSymbol(uStatus)}`));
-    dayEl.appendChild(el("span", `history-chip is-${wStatus}`, `W${statusSymbol(wStatus)}`));
+    dayEl.appendChild(el("span", `history-chip is-${uStatus}`, `U ${statusSymbol(uStatus)}`));
+    dayEl.appendChild(el("span", `history-chip is-${wStatus}`, `W ${statusSymbol(wStatus)}`));
     cells.appendChild(dayEl);
   }
 
@@ -381,8 +471,10 @@ function renderStepDetail(step) {
   const block = el("div", `step-block is-${safeStatus}`);
 
   const head = el("div", "step-block-head");
-  const cmdText = `$ ${step.command} ${(step.args || []).join(" ")}`.trim();
-  head.appendChild(el("code", "step-cmd", cmdText));
+  const rawCmd = `${step.command} ${(step.args || []).join(" ")}`.trim();
+  const cmdWrap = el("div", "step-cmd-wrap");
+  cmdWrap.appendChild(el("code", "step-cmd", `$ ${rawCmd}`));
+  head.appendChild(cmdWrap);
 
   const stats = el("div", "step-stats");
   stats.appendChild(el("span", "", step.id));
@@ -393,6 +485,7 @@ function renderStepDetail(step) {
   if (step.durationMs > 0) {
     stats.appendChild(el("span", "", formatDuration(step.durationMs)));
   }
+  stats.appendChild(createCopyButton(rawCmd, `Copy command for step ${step.id}`));
   head.appendChild(stats);
   block.appendChild(head);
 
@@ -410,10 +503,14 @@ function renderStepDetail(step) {
   }
 
   if (step.stderr && step.stderr.trim().length > 0) {
-    block.appendChild(
+    const trimmedStderr = step.stderr.trim();
+    const evHead = el("div", "evidence-head");
+    evHead.appendChild(
       el("div", "evidence-label", step.stderrTruncated ? "stderr (truncated, redacted)" : "stderr (redacted)"),
     );
-    block.appendChild(el("pre", "evidence-pre", step.stderr.trim()));
+    evHead.appendChild(createCopyButton(trimmedStderr, `Copy stderr for step ${step.id}`));
+    block.appendChild(evHead);
+    block.appendChild(el("pre", "evidence-pre", trimmedStderr));
   }
 
   const showStdout =
@@ -421,10 +518,14 @@ function renderStepDetail(step) {
     step.stdout.trim().length > 0 &&
     (step.id !== "resolved-version" || safeStatus !== "passed");
   if (showStdout) {
-    block.appendChild(
+    const trimmedStdout = step.stdout.trim();
+    const evHead = el("div", "evidence-head");
+    evHead.appendChild(
       el("div", "evidence-label", step.stdoutTruncated ? "stdout (truncated, redacted)" : "stdout (redacted)"),
     );
-    block.appendChild(el("pre", "evidence-pre", step.stdout.trim()));
+    evHead.appendChild(createCopyButton(trimmedStdout, `Copy stdout for step ${step.id}`));
+    block.appendChild(evHead);
+    block.appendChild(el("pre", "evidence-pre", trimmedStdout));
   }
 
   return block;
@@ -478,12 +579,21 @@ function renderPlatformEvidenceSection(platformId, result) {
   return section;
 }
 
-function renderTargetRow(target, historyDays) {
+function orderedEvidencePlatforms(results) {
+  const rank = (platformId) => {
+    const status = results?.[platformId]?.status;
+    if (status === "failed") return 0;
+    if (status === "infra_error") return 1;
+    if (status === "not_run") return 2;
+    return 3;
+  };
+  return [...PLATFORMS].sort((a, b) => rank(a) - rank(b));
+}
+
+function renderTargetRow(target, historyEntries) {
   const safeAgg = sanitizeStatus(target.aggregateStatus, VALID_AGGREGATE_STATUSES, "incomplete");
-  const details = el("details", "target-row");
-  if (safeAgg === "failed" || safeAgg === "infra_error") {
-    details.open = true;
-  }
+  const details = el("details", `target-row is-${safeAgg}`);
+  details.dataset.status = safeAgg;
 
   const summary = el("summary", "target-summary");
   const header = el("div", "target-header");
@@ -514,12 +624,10 @@ function renderTargetRow(target, historyDays) {
   identity.appendChild(el("p", "target-scope", `Scope: ${target.scope}`));
   header.appendChild(identity);
 
-  header.appendChild(el("span", `status-badge badge-${safeAgg}`, statusLabel(safeAgg)));
-
-  const toggle = el("span", "target-toggle");
-  toggle.appendChild(el("span", "target-toggle-closed", "[open]"));
-  toggle.appendChild(el("span", "target-toggle-open", "[close]"));
-  header.appendChild(toggle);
+  const actions = el("div", "target-header-actions");
+  actions.appendChild(el("span", `status-badge badge-${safeAgg}`, statusLabel(safeAgg)));
+  actions.appendChild(createDisclosureChevron());
+  header.appendChild(actions);
 
   summary.appendChild(header);
 
@@ -529,7 +637,7 @@ function renderTargetRow(target, historyDays) {
   }
   summary.appendChild(grid);
 
-  const historyRow = renderHistoryStrip(target.id, historyDays);
+  const historyRow = renderHistoryStrip(target.id, historyEntries);
   if (historyRow) {
     summary.appendChild(historyRow);
   }
@@ -576,12 +684,93 @@ function renderTargetRow(target, historyDays) {
     );
   }
 
-  for (const platformId of PLATFORMS) {
+  // Render failing/infra-error platforms first inside the drawer for fast triage.
+  for (const platformId of orderedEvidencePlatforms(target.results)) {
     drawer.appendChild(renderPlatformEvidenceSection(platformId, target.results?.[platformId]));
   }
 
   details.appendChild(drawer);
   return details;
+}
+
+function setupToolbar(toolbarEl, filterGroupEl, toggleAllBtn, listEl, targets) {
+  const counts = {
+    all: targets.length,
+    failed: 0,
+    infra_error: 0,
+    incomplete: 0,
+    passed: 0,
+  };
+  for (const t of targets) {
+    const st = sanitizeStatus(t.aggregateStatus, VALID_AGGREGATE_STATUSES, "incomplete");
+    counts[st] = (counts[st] || 0) + 1;
+  }
+
+  const filterDefs = [
+    { key: "all", label: "All", count: counts.all },
+    { key: "failed", label: "Failed", count: counts.failed, extraClass: "is-fail-pill" },
+    { key: "infra_error", label: "Infra error", count: counts.infra_error },
+    { key: "incomplete", label: "Incomplete", count: counts.incomplete },
+    { key: "passed", label: "Passed", count: counts.passed },
+  ].filter((item) => item.key === "all" || item.count > 0);
+
+  let activeFilter = "all";
+
+  const visibleRows = () =>
+    Array.from(listEl.querySelectorAll("details.target-row")).filter((row) => !row.hidden);
+
+  const syncToggleLabel = () => {
+    const rows = visibleRows();
+    const allOpen = rows.length > 0 && rows.every((row) => row.open);
+    toggleAllBtn.textContent = allOpen ? "Collapse all" : "Expand all";
+  };
+
+  const applyFilter = (filterKey) => {
+    activeFilter = filterKey;
+    for (const btn of filterGroupEl.querySelectorAll("button.filter-btn")) {
+      btn.setAttribute("aria-pressed", btn.dataset.filter === activeFilter ? "true" : "false");
+    }
+    let shown = 0;
+    for (const row of listEl.querySelectorAll("details.target-row")) {
+      const matches = activeFilter === "all" || row.dataset.status === activeFilter;
+      row.hidden = !matches;
+      if (matches) shown += 1;
+    }
+    const existingEmpty = listEl.querySelector(".empty-filter");
+    if (shown === 0) {
+      if (!existingEmpty) {
+        listEl.appendChild(el("div", "empty-filter", "No contracts match the selected filter."));
+      }
+    } else if (existingEmpty) {
+      existingEmpty.remove();
+    }
+    syncToggleLabel();
+  };
+
+  filterGroupEl.replaceChildren();
+  for (const item of filterDefs) {
+    const btn = el("button", item.extraClass ? `filter-btn ${item.extraClass}` : "filter-btn");
+    btn.type = "button";
+    btn.dataset.filter = item.key;
+    btn.setAttribute("aria-pressed", item.key === activeFilter ? "true" : "false");
+    btn.appendChild(el("span", "", item.label));
+    btn.appendChild(el("span", "filter-count", String(item.count)));
+    btn.addEventListener("click", () => applyFilter(item.key));
+    filterGroupEl.appendChild(btn);
+  }
+
+  toggleAllBtn.addEventListener("click", () => {
+    const rows = visibleRows();
+    const shouldOpen = !rows.every((row) => row.open);
+    for (const row of rows) {
+      row.open = shouldOpen;
+    }
+    syncToggleLabel();
+  });
+
+  listEl.addEventListener("toggle", syncToggleLabel, true);
+  syncToggleLabel();
+  toolbarEl.hidden = false;
 }
 
 async function fetchOptionalHistory() {
@@ -600,6 +789,9 @@ async function fetchOptionalHistory() {
 
 async function boot() {
   const banner = document.getElementById("state-banner");
+  const toolbar = document.getElementById("ledger-toolbar");
+  const filterGroup = document.getElementById("filter-group");
+  const toggleAllBtn = document.getElementById("toggle-all-btn");
   const list = document.getElementById("targets-list");
   const envStrip = document.getElementById("platform-env-strip");
   const lastRunEl = document.getElementById("last-run");
@@ -651,6 +843,7 @@ async function boot() {
     if (data.targets.length === 0) {
       banner.textContent = "No quickstart contracts were recorded in this run.";
       banner.hidden = false;
+      toolbar.hidden = true;
       list.hidden = true;
       return;
     }
@@ -659,6 +852,8 @@ async function boot() {
     for (const target of data.targets) {
       list.appendChild(renderTargetRow(target, historyByTarget.get(target.id)));
     }
+
+    setupToolbar(toolbar, filterGroup, toggleAllBtn, list, data.targets);
 
     if (data.legacyV1) {
       banner.textContent =
@@ -674,6 +869,7 @@ async function boot() {
     banner.textContent = "Status data could not be loaded.";
     banner.classList.add("is-error");
     banner.hidden = false;
+    toolbar.hidden = true;
     list.hidden = true;
   }
 }

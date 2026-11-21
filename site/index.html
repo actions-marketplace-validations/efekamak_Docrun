@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f6f8" />
     <title>docrun - quickstart checks</title>
     <meta
       name="description"
@@ -18,9 +19,11 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=2" />
+    <link rel="stylesheet" href="./styles.css?v=3" />
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to verification ledger</a>
+
     <div class="page">
       <header class="masthead">
         <div class="masthead-top">
@@ -34,11 +37,11 @@
           <div class="run-meta">
             <span class="meta-item">
               <span class="meta-label">Last run</span>
-              <time id="last-run" class="mono" datetime="">-</time>
+              <time id="last-run" class="mono tabular" datetime="">-</time>
             </span>
             <span class="meta-item" id="commit-wrap" hidden>
               <span class="meta-label">Commit</span>
-              <a id="commit-link" class="mono link" href="#" rel="noopener noreferrer">-</a>
+              <a id="commit-link" class="mono link tabular" href="#" rel="noopener noreferrer">-</a>
             </span>
           </div>
         </div>
@@ -57,37 +60,43 @@
 
         <section class="summary-strip" aria-label="Run summary">
           <div class="summary-stat stat-pass">
-            <span id="count-pass" class="stat-value mono">-</span>
+            <span id="count-pass" class="stat-value mono tabular">-</span>
             <span class="stat-label">PASS</span>
           </div>
           <div class="summary-stat stat-fail">
-            <span id="count-fail" class="stat-value mono">-</span>
+            <span id="count-fail" class="stat-value mono tabular">-</span>
             <span class="stat-label">FAIL</span>
           </div>
           <div class="summary-stat stat-infra">
-            <span id="count-infra" class="stat-value mono">-</span>
+            <span id="count-infra" class="stat-value mono tabular">-</span>
             <span class="stat-label">INFRA ERROR</span>
           </div>
           <div class="summary-stat stat-incomplete">
-            <span id="count-incomplete" class="stat-value mono">-</span>
+            <span id="count-incomplete" class="stat-value mono tabular">-</span>
             <span class="stat-label">INCOMPLETE</span>
           </div>
           <div class="summary-stat stat-checks">
-            <span id="count-checks" class="stat-value mono">-</span>
+            <span id="count-checks" class="stat-value mono tabular">-</span>
             <span class="stat-label">PLATFORM CHECKS</span>
           </div>
         </section>
       </header>
 
-      <main id="main-content">
+      <main id="main-content" tabindex="-1">
         <noscript>
           <div class="state-banner is-error">
             JavaScript is required to render the verification table. Inspect
             <a class="link" href="./status.json">status.json</a> directly.
           </div>
         </noscript>
+
         <div id="state-banner" class="state-banner" role="status" aria-live="polite">
           Loading latest verification run...
+        </div>
+
+        <div id="ledger-toolbar" class="ledger-toolbar" role="toolbar" aria-label="Filter verification ledger" hidden>
+          <div id="filter-group" class="filter-group" role="group" aria-label="Filter by status"></div>
+          <button id="toggle-all-btn" type="button" class="tool-btn">Expand all</button>
         </div>
 
         <section
@@ -117,6 +126,6 @@
       </footer>
     </div>
 
-    <script type="module" src="./app.js?v=2"></script>
+    <script type="module" src="./app.js?v=3"></script>
   </body>
 </html>
