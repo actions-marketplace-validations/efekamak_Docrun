@@ -283,6 +283,7 @@ const LOCAL_PATH_PATTERNS: Array<[RegExp, string]> = [
   [/\/[^\s"'`]*docrun-[A-Za-z0-9_-]+/g, "<temp-workspace>"],
   [/[A-Za-z]:\\Users\\[^\\\s"'`]+/g, "<local-user>"],
   [/\/(?:Users|home)\/[^/\s"'`]+/g, "<local-user>"],
+  [/[A-Za-z]:\\a\\[^\\\s"'`]+/g, "<runner-workspace>"],
 ];
 
 export function sanitizePublicExcerpt(
@@ -566,6 +567,24 @@ export async function runPlatformCatalog(
 }
 
 const SAFE_BADGE_FILENAME_REGEX = /^[a-z0-9][a-z0-9_-]{0,80}\.json$/;
+const MAX_SITE_STATUS_BYTES = 10 * 1024 * 1024; // 10 MiB
+const MAX_SITE_HISTORY_BYTES = 512 * 1024; // 512 KiB
+const MAX_SITE_BADGE_BYTES = 16 * 1024; // 16 KiB
+
+async function readBoundedTextFile(filePath: string, maxBytes: number, label: string): Promise<string> {
+  const lstat = await fs.lstat(filePath);
+  if (lstat.isSymbolicLink() || !lstat.isFile()) {
+    throw new Error(`${label} must be a regular file (symlinks are not allowed).`);
+  }
+  if (lstat.size > maxBytes) {
+    throw new Error(`${label} exceeds ${maxBytes}-byte size limit (${lstat.size} bytes).`);
+  }
+  const text = await fs.readFile(filePath, "utf8");
+  if (Buffer.byteLength(text, "utf8") > maxBytes) {
+    throw new Error(`${label} exceeds ${maxBytes}-byte size limit.`);
+  }
+  return text;
+}
 
 export async function buildStatusSite(options: {
   siteSrcDir: string;
@@ -574,7 +593,16 @@ export async function buildStatusSite(options: {
   badgesDir?: string;
   outDir: string;
 }): Promise<void> {
-  const statusText = await fs.readFile(options.statusJsonPath, "utf8");
+  const resolvedOutDir = path.resolve(options.outDir);
+  if (resolvedOutDir === path.parse(resolvedOutDir).root) {
+    throw new Error(`Refusing to write status site to filesystem root: "${resolvedOutDir}"`);
+  }
+
+  const statusText = await readBoundedTextFile(
+    options.statusJsonPath,
+    MAX_SITE_STATUS_BYTES,
+    "status.json",
+  );
   let parsedStatusJson: unknown;
   try {
     parsedStatusJson = JSON.parse(statusText);
@@ -596,7 +624,11 @@ export async function buildStatusSite(options: {
 
   let validatedHistoryText: string | null = null;
   if (options.historyJsonPath) {
-    const historyText = await fs.readFile(options.historyJsonPath, "utf8");
+    const historyText = await readBoundedTextFile(
+      options.historyJsonPath,
+      MAX_SITE_HISTORY_BYTES,
+      "history.json",
+    );
     let parsedHistoryJson: unknown;
     try {
       parsedHistoryJson = JSON.parse(historyText);
@@ -617,29 +649,29 @@ export async function buildStatusSite(options: {
     validatedHistoryText = `${JSON.stringify(parsedHistory.data, null, 2)}\n`;
   }
 
-  await fs.rm(options.outDir, { recursive: true, force: true });
-  await fs.mkdir(options.outDir, { recursive: true });
+  await fs.rm(resolvedOutDir, { recursive: true, force: true });
+  await fs.mkdir(resolvedOutDir, { recursive: true });
 
   const entries = await fs.readdir(options.siteSrcDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     await fs.copyFile(
       path.join(options.siteSrcDir, entry.name),
-      path.join(options.outDir, entry.name),
+      path.join(resolvedOutDir, entry.name),
     );
   }
 
   await fs.writeFile(
-    path.join(options.outDir, "status.json"),
+    path.join(resolvedOutDir, "status.json"),
     `${JSON.stringify(parsedStatus.data, null, 2)}\n`,
     "utf8",
   );
 
   if (validatedHistoryText !== null) {
-    await fs.writeFile(path.join(options.outDir, "history.json"), validatedHistoryText, "utf8");
+    await fs.writeFile(path.join(resolvedOutDir, "history.json"), validatedHistoryText, "utf8");
   }
 
-  const outBadgesDir = path.join(options.outDir, "badges");
+  const outBadgesDir = path.join(resolvedOutDir, "badges");
   if (options.badgesDir) {
     const badgeEntries = await fs.readdir(options.badgesDir, { withFileTypes: true });
     await fs.mkdir(outBadgesDir, { recursive: true });
@@ -648,7 +680,11 @@ export async function buildStatusSite(options: {
       if (!SAFE_BADGE_FILENAME_REGEX.test(entry.name)) {
         throw new Error(`Unsafe badge filename in badgesDir: "${entry.name}"`);
       }
-      const rawBadge = await fs.readFile(path.join(options.badgesDir, entry.name), "utf8");
+      const rawBadge = await readBoundedTextFile(
+        path.join(options.badgesDir, entry.name),
+        MAX_SITE_BADGE_BYTES,
+        `badge "${entry.name}"`,
+      );
       const validatedBadge = ShieldsEndpointSchema.parse(JSON.parse(rawBadge));
       await fs.writeFile(
         path.join(outBadgesDir, entry.name),
@@ -661,5 +697,5 @@ export async function buildStatusSite(options: {
     await writeBadges(outBadgesDir, badges);
   }
 
-  await fs.writeFile(path.join(options.outDir, ".nojekyll"), "", "utf8");
+  await fs.writeFile(path.join(resolvedOutDir, ".nojekyll"), "", "utf8");
 }

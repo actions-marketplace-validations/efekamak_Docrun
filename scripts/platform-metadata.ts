@@ -32,18 +32,32 @@ export function detectHostPlatformId(hostPlatform: NodeJS.Platform = process.pla
   );
 }
 
-function cleanMeta(value: string, maxLen: number, fallback: string): string {
-  const sanitized = sanitizePublicExcerpt(value.replace(/[\r\n\t]+/g, " ").trim(), maxLen).text.trim();
-  if (sanitized.length === 0) {
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS_REGEX = /[\x00-\x1f\x7f]+/g;
+
+export function cleanMetadataValue(value: string, maxLen: number, fallback: string): string {
+  const collapsed = value.replace(CONTROL_CHARS_REGEX, " ").replace(/\s+/g, " ").trim();
+  if (collapsed.length === 0) {
     return fallback;
   }
-  return sanitized.slice(0, maxLen);
+  // Scrub secrets and local paths without inserting multi-line truncation markers.
+  const scrubbed = sanitizePublicExcerpt(collapsed, 2048).text.trim();
+  const clipped = scrubbed.length > maxLen ? scrubbed.slice(0, maxLen).trim() : scrubbed;
+  return clipped.length > 0 ? clipped : fallback;
 }
 
 export async function readNpmVersion(timeoutMs: number = 10_000): Promise<string> {
   try {
     const { execPath, execArgs } = await resolveExecutable("npm", ["--version"]);
     return await new Promise<string>((resolve) => {
+      let settled = false;
+      const finish = (version: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(version);
+      };
+
       const child = spawn(execPath, execArgs, {
         shell: false,
         env: buildMinimalEnv(),
@@ -55,9 +69,9 @@ export async function readNpmVersion(timeoutMs: number = 10_000): Promise<string
         try {
           child.kill("SIGKILL");
         } catch {
-          // ignore
+          // Best-effort process cleanup.
         }
-        resolve("unknown");
+        finish("unknown");
       }, timeoutMs);
 
       child.stdout?.on("data", (chunk: Buffer) => {
@@ -66,18 +80,14 @@ export async function readNpmVersion(timeoutMs: number = 10_000): Promise<string
         }
       });
 
-      child.on("error", () => {
-        clearTimeout(timer);
-        resolve("unknown");
-      });
+      child.on("error", () => finish("unknown"));
 
       child.on("close", (code) => {
-        clearTimeout(timer);
         const trimmed = stdout.trim();
         if (code === 0 && /^[0-9]+\.[0-9]+\.[0-9A-Za-z.+-]{1,24}$/.test(trimmed)) {
-          resolve(trimmed);
+          finish(trimmed);
         } else {
-          resolve("unknown");
+          finish("unknown");
         }
       });
     });
@@ -101,15 +111,15 @@ export async function collectPlatformEnvironment(
     options?.runnerImage !== undefined
       ? options.runnerImage
       : (process.env.ImageOS?.trim() || null);
-  const runnerImage = rawRunnerImage ? cleanMeta(rawRunnerImage, 64, "unknown") : null;
+  const runnerImage = rawRunnerImage ? cleanMetadataValue(rawRunnerImage, 64, "unknown") : null;
 
   const env: PlatformEnvironment = {
     osName: platform === "ubuntu" ? "Ubuntu" : "Windows",
-    osVersion: cleanMeta(os.version(), 120, platform === "ubuntu" ? "Linux" : "Windows"),
-    osRelease: cleanMeta(os.release(), 64, "unknown"),
-    arch: cleanMeta(process.arch, 32, "unknown"),
-    nodeVersion: cleanMeta(process.version, 32, "unknown"),
-    npmVersion: cleanMeta(npmVersion, 32, "unknown"),
+    osVersion: cleanMetadataValue(os.version(), 120, platform === "ubuntu" ? "Linux" : "Windows"),
+    osRelease: cleanMetadataValue(os.release(), 64, "unknown"),
+    arch: cleanMetadataValue(process.arch, 32, "unknown"),
+    nodeVersion: cleanMetadataValue(process.version, 32, "unknown"),
+    npmVersion: cleanMetadataValue(npmVersion, 32, "unknown"),
     runnerImage,
   };
 

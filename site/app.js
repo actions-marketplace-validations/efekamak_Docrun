@@ -234,13 +234,21 @@ function renderPlatformEnvironments(container, platforms) {
 
     if (overview?.runStatus === "complete" && overview.environment) {
       const env = overview.environment;
+      const osLabel = env.runnerImage
+        ? `${env.osName} (${env.runnerImage})`
+        : env.osVersion || env.osName;
       const parts = [
-        env.osVersion || env.osName,
+        osLabel,
         env.nodeVersion ? `Node ${env.nodeVersion}` : null,
         env.npmVersion ? `npm ${env.npmVersion}` : null,
         env.arch || null,
       ].filter(Boolean);
-      cell.appendChild(el("span", "env-details", parts.join(" · ")));
+      const detailsEl = el("span", "env-details", parts.join(" · "));
+      const fullOs = [env.osVersion, env.osRelease].filter(Boolean).join(" / ");
+      if (fullOs) {
+        detailsEl.title = fullOs;
+      }
+      cell.appendChild(detailsEl);
     } else {
       const note = overview?.note || "Runner metadata unavailable.";
       cell.appendChild(el("span", "env-details", note));
@@ -317,21 +325,28 @@ function renderPlatformSummaryCell(platformId, result) {
   return cell;
 }
 
-function renderHistoryStrip(targetId, historyDays) {
-  if (!Array.isArray(historyDays) || historyDays.length === 0) {
-    return null;
+function indexHistoryByTarget(historyDays) {
+  const byTarget = new Map();
+  if (!Array.isArray(historyDays)) {
+    return byTarget;
   }
-
-  const matching = [];
   for (const day of historyDays) {
     if (!day || !Array.isArray(day.targets)) continue;
-    const entry = day.targets.find((t) => t && t.id === targetId);
-    if (entry && entry.platforms) {
-      matching.push({ date: day.date, entry });
+    for (const entry of day.targets) {
+      if (!entry || typeof entry.id !== "string" || !entry.platforms) continue;
+      let list = byTarget.get(entry.id);
+      if (!list) {
+        list = [];
+        byTarget.set(entry.id, list);
+      }
+      list.push({ date: day.date, entry });
     }
   }
+  return byTarget;
+}
 
-  if (matching.length === 0) {
+function renderHistoryStrip(targetId, matching) {
+  if (!Array.isArray(matching) || matching.length === 0) {
     return null;
   }
 
@@ -640,8 +655,9 @@ async function boot() {
       return;
     }
 
+    const historyByTarget = indexHistoryByTarget(historyDays);
     for (const target of data.targets) {
-      list.appendChild(renderTargetRow(target, historyDays));
+      list.appendChild(renderTargetRow(target, historyByTarget.get(target.id)));
     }
 
     if (data.legacyV1) {

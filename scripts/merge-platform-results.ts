@@ -47,9 +47,9 @@ export async function loadPlatformArtifact(
     };
   }
 
-  let stat: Awaited<ReturnType<typeof fs.stat>>;
+  let lstat: Awaited<ReturnType<typeof fs.lstat>>;
   try {
-    stat = await fs.stat(filePath);
+    lstat = await fs.lstat(filePath);
   } catch {
     return {
       ok: false,
@@ -57,14 +57,14 @@ export async function loadPlatformArtifact(
     };
   }
 
-  if (!stat.isFile()) {
+  if (lstat.isSymbolicLink() || !lstat.isFile()) {
     return {
       ok: false,
-      reason: formatMissingArtifactMessage(expectedPlatform, jobResult, "Platform artifact is not a file."),
+      reason: formatMissingArtifactMessage(expectedPlatform, jobResult, "Platform artifact is not a regular file."),
     };
   }
 
-  if (stat.size > maxBytes) {
+  if (lstat.size > maxBytes) {
     return {
       ok: false,
       reason: `Platform artifact for ${expectedPlatform} exceeded the ${maxBytes}-byte size cap.`,
@@ -72,13 +72,37 @@ export async function loadPlatformArtifact(
   }
 
   let rawText: string;
+  let handle: Awaited<ReturnType<typeof fs.open>> | null = null;
   try {
-    rawText = await fs.readFile(filePath, "utf8");
+    handle = await fs.open(filePath, "r");
+    const fstat = await handle.stat();
+    if (!fstat.isFile()) {
+      return {
+        ok: false,
+        reason: formatMissingArtifactMessage(expectedPlatform, jobResult, "Platform artifact is not a regular file."),
+      };
+    }
+    if (fstat.size > maxBytes) {
+      return {
+        ok: false,
+        reason: `Platform artifact for ${expectedPlatform} exceeded the ${maxBytes}-byte size cap.`,
+      };
+    }
+    const buf = Buffer.alloc(fstat.size);
+    let offset = 0;
+    while (offset < fstat.size) {
+      const { bytesRead } = await handle.read(buf, offset, fstat.size - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    rawText = buf.subarray(0, offset).toString("utf8");
   } catch {
     return {
       ok: false,
       reason: formatMissingArtifactMessage(expectedPlatform, jobResult, "Platform artifact could not be read."),
     };
+  } finally {
+    await handle?.close().catch(() => {});
   }
 
   let parsedJson: unknown;

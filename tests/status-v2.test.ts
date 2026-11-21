@@ -9,9 +9,9 @@ import {
   writeBadges,
   type ShieldsEndpointBadge,
 } from "../scripts/badges.js";
-import type { CatalogDocument } from "../scripts/catalog-lib.js";
+import { buildStatusSite, type CatalogDocument } from "../scripts/catalog-lib.js";
 import { loadPlatformArtifact, mergePlatformRuns } from "../scripts/merge-platform-results.js";
-import { assertPlatformMatchesHost } from "../scripts/platform-metadata.js";
+import { assertPlatformMatchesHost, cleanMetadataValue } from "../scripts/platform-metadata.js";
 import {
   AggregateStatusDocumentSchema,
   PlatformRunDocumentSchema,
@@ -846,3 +846,69 @@ describe("badges", () => {
     }
   });
 });
+
+describe("hardening regressions", () => {
+  it("rejects platform artifacts whose summary counts disagree with targets", () => {
+    const doc = validPlatformDocument("ubuntu", [target("alpha", { status: "passed" })]);
+    const tampered = {
+      ...doc,
+      summary: { total: 1, passed: 0, failed: 1, infraErrors: 0, notRun: 0 },
+    };
+    const parsed = PlatformRunDocumentSchema.safeParse(tampered);
+    assert.equal(parsed.success, false);
+  });
+
+  it("cleans metadata values without injecting multi-line truncation markers", () => {
+    const longOs = `Windows\n\tServer ${"x".repeat(200)} C:\\Users\\alice\\secret`;
+    const cleaned = cleanMetadataValue(longOs, 64, "fallback");
+    assert.ok(cleaned.length <= 64);
+    assert.doesNotMatch(cleaned, /\[truncated/);
+    assert.doesNotMatch(cleaned, /[\r\n\t]/);
+    assert.doesNotMatch(cleaned, /alice/);
+    assert.equal(cleanMetadataValue("   \n\t  ", 32, "fallback"), "fallback");
+  });
+
+  it("rejects symlinked platform artifacts", async (t) => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-symlink-"));
+    try {
+      const realPath = path.join(dir, "real.json");
+      const linkPath = path.join(dir, "link.json");
+      await fs.writeFile(
+        realPath,
+        JSON.stringify(validPlatformDocument("ubuntu", [target("alpha")])),
+        "utf8",
+      );
+      try {
+        await fs.symlink(realPath, linkPath);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EPERM") {
+          t.skip("Host OS does not allow unprivileged symlinks.");
+          return;
+        }
+        throw err;
+      }
+
+      const outcome = await loadPlatformArtifact(linkPath, "ubuntu");
+      assert.equal(outcome.ok, false);
+      if (!outcome.ok) {
+        assert.match(outcome.reason, /regular file/);
+      }
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to write status site to filesystem root", async () => {
+    const rootDir = path.parse(process.cwd()).root;
+    await assert.rejects(
+      () =>
+        buildStatusSite({
+          siteSrcDir: path.join(process.cwd(), "site"),
+          statusJsonPath: path.join(process.cwd(), "catalog", "targets.json"),
+          outDir: rootDir,
+        }),
+      /filesystem root/,
+    );
+  });
+});
+

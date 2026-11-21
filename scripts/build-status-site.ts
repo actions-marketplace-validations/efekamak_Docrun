@@ -1,11 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { buildStatusSite } from "./catalog-lib.js";
-
-function getArgValue(prefix: string): string | undefined {
-  const match = process.argv.find((arg) => arg.startsWith(prefix));
-  return match ? match.slice(prefix.length) : undefined;
-}
+import { getArgValue } from "./cli-utils.js";
 
 async function exists(p: string): Promise<boolean> {
   try {

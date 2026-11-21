@@ -1,31 +1,10 @@
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { generateBadges, writeBadges } from "./badges.js";
 import { loadAndValidateCatalog } from "./catalog-lib.js";
+import { getArgValue, resolveSourceCommit } from "./cli-utils.js";
 import { DEFAULT_HISTORY_URL, fetchPreviousHistory, mergeHistory } from "./history.js";
 import { loadPlatformArtifact, mergePlatformRuns } from "./merge-platform-results.js";
-
-function resolveSourceCommit(): string | null {
-  const envSha = process.env.GITHUB_SHA?.trim();
-  if (envSha && /^[0-9a-f]{7,40}$/i.test(envSha)) {
-    return envSha.slice(0, 7);
-  }
-  try {
-    const out = execFileSync("git", ["rev-parse", "--short=7", "HEAD"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return out.length > 0 ? out : null;
-  } catch {
-    return null;
-  }
-}
-
-function getArgValue(prefix: string): string | undefined {
-  const match = process.argv.find((arg) => arg.startsWith(prefix));
-  return match ? match.slice(prefix.length) : undefined;
-}
 
 const repoRoot = process.cwd();
 const catalogRelPath = getArgValue("--catalog=") ?? "catalog/targets.json";

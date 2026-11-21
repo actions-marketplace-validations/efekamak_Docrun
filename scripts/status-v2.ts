@@ -161,6 +161,21 @@ export const PlatformRunDocumentSchema = z
       }
       seen.add(id);
     }
+
+    const expectedSummary = summarizePlatformRun(doc.targets);
+    if (
+      doc.summary.total !== expectedSummary.total ||
+      doc.summary.passed !== expectedSummary.passed ||
+      doc.summary.failed !== expectedSummary.failed ||
+      doc.summary.infraErrors !== expectedSummary.infraErrors ||
+      doc.summary.notRun !== expectedSummary.notRun
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["summary"],
+        message: "Platform artifact summary counts do not match target results.",
+      });
+    }
   });
 
 export type PlatformRunDocument = z.infer<typeof PlatformRunDocumentSchema>;

@@ -1,30 +1,9 @@
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { runPlatformCatalog } from "./catalog-lib.js";
+import { getArgValue, resolveSourceCommit } from "./cli-utils.js";
 import { detectHostPlatformId } from "./platform-metadata.js";
 import { PlatformIdSchema, type PlatformId } from "./status-v2.js";
-
-function resolveSourceCommit(): string | null {
-  const envSha = process.env.GITHUB_SHA?.trim();
-  if (envSha && /^[0-9a-f]{7,40}$/i.test(envSha)) {
-    return envSha.slice(0, 7);
-  }
-  try {
-    const out = execFileSync("git", ["rev-parse", "--short=7", "HEAD"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return out.length > 0 ? out : null;
-  } catch {
-    return null;
-  }
-}
-
-function getArgValue(prefix: string): string | undefined {
-  const match = process.argv.find((arg) => arg.startsWith(prefix));
-  return match ? match.slice(prefix.length) : undefined;
-}
 
 const platformArg = getArgValue("--platform=");
 const platform: PlatformId = platformArg
@@ -45,12 +24,14 @@ const outPath = outArg
   : path.resolve(process.cwd(), "generated", `platform-${platform}.json`);
 
 const concurrencyArg = getArgValue("--concurrency=");
-const parsedConcurrency = concurrencyArg ? Number.parseInt(concurrencyArg, 10) : undefined;
 const defaultConcurrency = platform === "windows" ? 1 : 2;
-const concurrency =
-  parsedConcurrency !== undefined && Number.isInteger(parsedConcurrency) && parsedConcurrency >= 1
-    ? parsedConcurrency
-    : defaultConcurrency;
+let concurrency = defaultConcurrency;
+if (concurrencyArg !== undefined) {
+  if (!/^[1-9]\d*$/.test(concurrencyArg)) {
+    throw new Error(`Invalid --concurrency value: "${concurrencyArg}" (expected positive integer).`);
+  }
+  concurrency = Number.parseInt(concurrencyArg, 10);
+}
 
 const doc = await runPlatformCatalog({
   baseDir: process.cwd(),
