@@ -1,4 +1,17 @@
 const REPO_BASE = "https://github.com/efekamak/Docrun";
+const PLATFORMS = ["ubuntu", "windows"];
+const PLATFORM_LABELS = {
+  ubuntu: "Ubuntu",
+  windows: "Windows",
+};
+const VALID_AGGREGATE_STATUSES = new Set(["passed", "failed", "infra_error", "incomplete"]);
+const VALID_PLATFORM_STATUSES = new Set(["passed", "failed", "infra_error", "not_run"]);
+const VALID_STEP_STATUSES = new Set(["passed", "failed", "timed_out", "skipped"]);
+const SAFE_SLUG_REGEX = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+function sanitizeStatus(status, allowedSet, fallback) {
+  return typeof status === "string" && allowedSet.has(status) ? status : fallback;
+}
 
 function formatDuration(ms) {
   if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) {
@@ -24,6 +37,19 @@ function formatLocalTime(iso) {
   }).format(date);
 }
 
+function formatShortUtcDate(dateStr) {
+  if (typeof dateStr !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return "-";
+  }
+  const dt = new Date(`${dateStr}T00:00:00Z`);
+  if (Number.isNaN(dt.getTime())) return dateStr;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    timeZone: "UTC",
+  }).format(dt);
+}
+
 function statusLabel(status) {
   switch (status) {
     case "passed":
@@ -32,21 +58,42 @@ function statusLabel(status) {
       return "FAIL";
     case "infra_error":
       return "INFRA ERROR";
+    case "incomplete":
+      return "INCOMPLETE";
     case "not_run":
       return "NOT RUN";
     default:
-      return String(status || "UNKNOWN").toUpperCase();
+      return "UNKNOWN";
   }
 }
 
-function stepSymbol(status) {
+function compactStatusLabel(status) {
+  switch (status) {
+    case "passed":
+      return "PASS";
+    case "failed":
+      return "FAIL";
+    case "infra_error":
+      return "INFRA";
+    case "not_run":
+      return "NOT RUN";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+function statusSymbol(status) {
   switch (status) {
     case "passed":
       return "✓";
     case "failed":
     case "timed_out":
       return "✕";
+    case "infra_error":
+      return "!";
     case "skipped":
+    case "not_run":
+    case "incomplete":
       return "○";
     default:
       return "·";
@@ -70,29 +117,171 @@ function el(tag, className, text) {
   return node;
 }
 
-function renderProofStrip(target) {
-  const strip = el("div", "proof-strip");
-  strip.setAttribute("aria-label", "Executed contract steps");
+/**
+ * Temporary read-only fallback for schema v1 snapshots during cache transitions.
+ * Maps v1 rows to Ubuntu-only results and labels Windows as not_run so aggregate
+ * status is never falsely promoted to passed.
+ */
+function normalizeLegacyV1ToViewModel(v1) {
+  const targets = (Array.isArray(v1.targets) ? v1.targets : []).map((t) => {
+    const ubuntuStatus = sanitizeStatus(t.status, VALID_PLATFORM_STATUSES, "infra_error");
+    const aggregateStatus =
+      ubuntuStatus === "failed"
+        ? "failed"
+        : ubuntuStatus === "infra_error"
+          ? "infra_error"
+          : "incomplete";
+    return {
+      id: t.id,
+      name: t.name,
+      package: t.package,
+      scope: t.scope,
+      docsUrl: t.docsUrl,
+      repositoryUrl: t.repositoryUrl,
+      contractPath: t.contractPath,
+      aggregateStatus,
+      versionDrift: false,
+      results: {
+        ubuntu: {
+          status: ubuntuStatus,
+          resolvedVersion: t.resolvedVersion ?? null,
+          checkedAt: t.checkedAt ?? v1.generatedAt ?? "",
+          durationMs: typeof t.durationMs === "number" ? t.durationMs : 0,
+          firstFailedStepId: t.firstFailedStepId ?? null,
+          failureCategory: t.failureCategory ?? null,
+          fingerprint: t.fingerprint ?? null,
+          notRunReason: t.notRunReason ?? null,
+          infraErrorMessage: t.infraErrorMessage ?? null,
+          steps: Array.isArray(t.steps) ? t.steps : [],
+        },
+        windows: {
+          status: "not_run",
+          resolvedVersion: null,
+          checkedAt: v1.generatedAt ?? "",
+          durationMs: 0,
+          firstFailedStepId: null,
+          failureCategory: null,
+          fingerprint: null,
+          notRunReason: "Legacy schema v1 snapshot (Ubuntu only).",
+          infraErrorMessage: null,
+          steps: [],
+        },
+      },
+    };
+  });
 
-  if (!Array.isArray(target.steps) || target.steps.length === 0) {
-    const empty = el("span", "proof-pill", target.status === "infra_error" ? "no steps executed" : "not executed");
-    strip.appendChild(empty);
+  let passed = 0;
+  let failed = 0;
+  let infraErrors = 0;
+  let incomplete = 0;
+  let platformPassed = 0;
+  for (const t of targets) {
+    if (t.aggregateStatus === "passed") passed += 1;
+    else if (t.aggregateStatus === "failed") failed += 1;
+    else if (t.aggregateStatus === "infra_error") infraErrors += 1;
+    else incomplete += 1;
+    if (t.results.ubuntu.status === "passed") platformPassed += 1;
+  }
+
+  return {
+    legacyV1: true,
+    generatedAt: v1.generatedAt ?? "",
+    sourceCommit: v1.sourceCommit ?? null,
+    summary: {
+      targets: targets.length,
+      passed,
+      failed,
+      infraErrors,
+      incomplete,
+      platformChecks: targets.length * 2,
+      platformPassed,
+    },
+    platforms: {
+      ubuntu: { runStatus: "complete", generatedAt: v1.generatedAt ?? null, environment: null, note: "Legacy v1 snapshot" },
+      windows: { runStatus: "infra_error", generatedAt: null, environment: null, note: "Not included in legacy v1 snapshot" },
+    },
+    targets,
+  };
+}
+
+function parseStatusDocument(raw) {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Invalid status.json");
+  }
+  if (raw.schemaVersion === 2 && raw.kind === "aggregate-status" && Array.isArray(raw.targets)) {
+    return { legacyV1: false, ...raw };
+  }
+  if (raw.schemaVersion === 1 && Array.isArray(raw.targets)) {
+    return normalizeLegacyV1ToViewModel(raw);
+  }
+  throw new Error("Unsupported status.json schema");
+}
+
+function renderPlatformEnvironments(container, platforms) {
+  container.replaceChildren();
+  if (!platforms || typeof platforms !== "object") {
+    container.hidden = true;
+    return;
+  }
+
+  for (const platformId of PLATFORMS) {
+    const overview = platforms[platformId];
+    const cell = el(
+      "div",
+      overview?.runStatus === "infra_error" ? "env-cell is-infra" : "env-cell",
+    );
+    cell.appendChild(el("span", "env-platform", PLATFORM_LABELS[platformId]));
+
+    if (overview?.runStatus === "complete" && overview.environment) {
+      const env = overview.environment;
+      const parts = [
+        env.osVersion || env.osName,
+        env.nodeVersion ? `Node ${env.nodeVersion}` : null,
+        env.npmVersion ? `npm ${env.npmVersion}` : null,
+        env.arch || null,
+      ].filter(Boolean);
+      cell.appendChild(el("span", "env-details", parts.join(" · ")));
+    } else {
+      const note = overview?.note || "Runner metadata unavailable.";
+      cell.appendChild(el("span", "env-details", note));
+    }
+
+    container.appendChild(cell);
+  }
+
+  container.hidden = false;
+}
+
+function renderProofStrip(platformId, result) {
+  const strip = el("div", "proof-strip");
+  strip.setAttribute("aria-label", `${PLATFORM_LABELS[platformId]} contract steps`);
+
+  const steps = Array.isArray(result?.steps) ? result.steps : [];
+  if (steps.length === 0) {
+    const label =
+      result?.status === "infra_error"
+        ? "runner infra error"
+        : result?.status === "not_run"
+          ? "not executed"
+          : "no steps recorded";
+    strip.appendChild(el("span", "proof-pill", label));
     return strip;
   }
 
-  target.steps.forEach((step, idx) => {
-    const stepWrap = el("div", `proof-step is-${step.status}`);
+  steps.forEach((step, idx) => {
+    const safeStepStatus = sanitizeStatus(step.status, VALID_STEP_STATUSES, "skipped");
+    const stepWrap = el("div", `proof-step is-${safeStepStatus}`);
     const node = el("div", "proof-node");
-    const pill = el("span", "proof-pill", `${stepSymbol(step.status)} ${step.id}`);
+    const pill = el("span", "proof-pill", `${statusSymbol(safeStepStatus)} ${step.id}`);
     node.appendChild(pill);
 
-    if (target.firstFailedStepId && step.id === target.firstFailedStepId) {
+    if (result.firstFailedStepId && step.id === result.firstFailedStepId) {
       node.appendChild(el("span", "proof-marker", "▲ first failure"));
     }
 
     stepWrap.appendChild(node);
 
-    if (idx < target.steps.length - 1) {
+    if (idx < steps.length - 1) {
       const connector = el("span", "proof-connector");
       connector.setAttribute("aria-hidden", "true");
       stepWrap.appendChild(connector);
@@ -104,8 +293,77 @@ function renderProofStrip(target) {
   return strip;
 }
 
+function renderPlatformSummaryCell(platformId, result) {
+  const safeStatus = sanitizeStatus(result?.status, VALID_PLATFORM_STATUSES, "infra_error");
+  const cell = el("div", `platform-cell is-${safeStatus}`);
+
+  const head = el("div", "platform-cell-head");
+  const left = el("div", "platform-cell-left");
+  left.appendChild(el("span", "platform-name", PLATFORM_LABELS[platformId]));
+  left.appendChild(
+    el("span", `status-badge is-compact badge-${safeStatus}`, compactStatusLabel(safeStatus)),
+  );
+  head.appendChild(left);
+
+  const right = el("div", "platform-cell-right");
+  if (result?.resolvedVersion) {
+    right.appendChild(el("span", "", `v${result.resolvedVersion}`));
+  }
+  right.appendChild(el("span", "", formatDuration(result?.durationMs)));
+  head.appendChild(right);
+
+  cell.appendChild(head);
+  cell.appendChild(renderProofStrip(platformId, result));
+  return cell;
+}
+
+function renderHistoryStrip(targetId, historyDays) {
+  if (!Array.isArray(historyDays) || historyDays.length === 0) {
+    return null;
+  }
+
+  const matching = [];
+  for (const day of historyDays) {
+    if (!day || !Array.isArray(day.targets)) continue;
+    const entry = day.targets.find((t) => t && t.id === targetId);
+    if (entry && entry.platforms) {
+      matching.push({ date: day.date, entry });
+    }
+  }
+
+  if (matching.length === 0) {
+    return null;
+  }
+
+  const row = el("div", "history-row");
+  row.setAttribute("aria-label", `Recent ${matching.length}-day history for ${targetId}`);
+  row.appendChild(el("span", "history-label", `${matching.length}-day history`));
+
+  const cells = el("div", "history-cells");
+  for (const { date, entry } of matching) {
+    const uStatus = sanitizeStatus(entry.platforms.ubuntu?.status, VALID_PLATFORM_STATUSES, "not_run");
+    const wStatus = sanitizeStatus(entry.platforms.windows?.status, VALID_PLATFORM_STATUSES, "not_run");
+    const uVer = entry.platforms.ubuntu?.resolvedVersion ? ` (${entry.platforms.ubuntu.resolvedVersion})` : "";
+    const wVer = entry.platforms.windows?.resolvedVersion ? ` (${entry.platforms.windows.resolvedVersion})` : "";
+
+    const dayEl = el("span", "history-day");
+    const summaryText = `${date}: Ubuntu ${statusLabel(uStatus)}${uVer}, Windows ${statusLabel(wStatus)}${wVer}`;
+    dayEl.title = summaryText;
+    dayEl.setAttribute("aria-label", summaryText);
+
+    dayEl.appendChild(el("span", "history-date", formatShortUtcDate(date)));
+    dayEl.appendChild(el("span", `history-chip is-${uStatus}`, `U${statusSymbol(uStatus)}`));
+    dayEl.appendChild(el("span", `history-chip is-${wStatus}`, `W${statusSymbol(wStatus)}`));
+    cells.appendChild(dayEl);
+  }
+
+  row.appendChild(cells);
+  return row;
+}
+
 function renderStepDetail(step) {
-  const block = el("div", `step-block is-${step.status}`);
+  const safeStatus = sanitizeStatus(step.status, VALID_STEP_STATUSES, "skipped");
+  const block = el("div", `step-block is-${safeStatus}`);
 
   const head = el("div", "step-block-head");
   const cmdText = `$ ${step.command} ${(step.args || []).join(" ")}`.trim();
@@ -113,7 +371,7 @@ function renderStepDetail(step) {
 
   const stats = el("div", "step-stats");
   stats.appendChild(el("span", "", step.id));
-  stats.appendChild(el("span", "", step.status.toUpperCase()));
+  stats.appendChild(el("span", "", safeStatus.toUpperCase()));
   if (step.exitCode !== null && step.exitCode !== undefined) {
     stats.appendChild(el("span", "", `exit ${step.exitCode}`));
   }
@@ -143,7 +401,11 @@ function renderStepDetail(step) {
     block.appendChild(el("pre", "evidence-pre", step.stderr.trim()));
   }
 
-  if (step.stdout && step.stdout.trim().length > 0 && step.id !== "resolved-version") {
+  const showStdout =
+    step.stdout &&
+    step.stdout.trim().length > 0 &&
+    (step.id !== "resolved-version" || safeStatus !== "passed");
+  if (showStdout) {
     block.appendChild(
       el("div", "evidence-label", step.stdoutTruncated ? "stdout (truncated, redacted)" : "stdout (redacted)"),
     );
@@ -153,9 +415,58 @@ function renderStepDetail(step) {
   return block;
 }
 
-function renderTargetRow(target) {
+function renderPlatformEvidenceSection(platformId, result) {
+  const safeStatus = sanitizeStatus(result?.status, VALID_PLATFORM_STATUSES, "infra_error");
+  const section = el("div", "platform-evidence-section");
+
+  const head = el("div", "platform-evidence-head");
+  const title = el("div", "platform-evidence-title");
+  title.appendChild(el("span", "", `${PLATFORM_LABELS[platformId]} evidence`));
+  title.appendChild(el("span", `status-badge is-compact badge-${safeStatus}`, statusLabel(safeStatus)));
+  head.appendChild(title);
+
+  const facts = el("div", "detail-facts");
+  if (result?.resolvedVersion) {
+    facts.appendChild(el("span", "", `version ${result.resolvedVersion}`));
+  }
+  const checkedEl = el("time", "", `checked ${formatLocalTime(result?.checkedAt)}`);
+  checkedEl.dateTime = result?.checkedAt || "";
+  checkedEl.title = result?.checkedAt || "";
+  facts.appendChild(checkedEl);
+  if (result?.fingerprint) {
+    facts.appendChild(el("span", "", `fingerprint ${result.fingerprint}`));
+  }
+  if (result?.failureCategory) {
+    facts.appendChild(el("span", "", `category ${result.failureCategory}`));
+  }
+  head.appendChild(facts);
+  section.appendChild(head);
+
+  if (result?.notRunReason) {
+    section.appendChild(el("div", "notice-box", `Not run: ${result.notRunReason}`));
+  }
+
+  if (result?.infraErrorMessage) {
+    section.appendChild(
+      el("div", "notice-box is-infra", `Infrastructure error: ${result.infraErrorMessage}`),
+    );
+  }
+
+  if (Array.isArray(result?.steps) && result.steps.length > 0) {
+    const stepsWrap = el("div", "steps-table");
+    for (const step of result.steps) {
+      stepsWrap.appendChild(renderStepDetail(step));
+    }
+    section.appendChild(stepsWrap);
+  }
+
+  return section;
+}
+
+function renderTargetRow(target, historyDays) {
+  const safeAgg = sanitizeStatus(target.aggregateStatus, VALID_AGGREGATE_STATUSES, "incomplete");
   const details = el("details", "target-row");
-  if (target.status === "failed" || target.status === "infra_error") {
+  if (safeAgg === "failed" || safeAgg === "infra_error") {
     details.open = true;
   }
 
@@ -165,16 +476,30 @@ function renderTargetRow(target) {
   const identity = el("div", "target-identity");
   const titleLine = el("div", "target-title-line");
   titleLine.appendChild(el("span", "target-name", target.name));
-  const pkgLabel = target.resolvedVersion
-    ? `${target.package}@${target.resolvedVersion}`
-    : target.package;
+
+  const uVer = target.results?.ubuntu?.resolvedVersion ?? null;
+  const wVer = target.results?.windows?.resolvedVersion ?? null;
+  const pkgLabel =
+    uVer && wVer && uVer === wVer
+      ? `${target.package}@${uVer}`
+      : uVer && !wVer
+        ? `${target.package}@${uVer}`
+        : !uVer && wVer
+          ? `${target.package}@${wVer}`
+          : target.package;
   titleLine.appendChild(el("span", "target-package", pkgLabel));
+
+  if (target.versionDrift) {
+    const drift = el("span", "drift-pill", "VERSION DRIFT");
+    drift.title = `Ubuntu resolved ${uVer ?? "unknown"}, Windows resolved ${wVer ?? "unknown"}`;
+    titleLine.appendChild(drift);
+  }
+
   identity.appendChild(titleLine);
   identity.appendChild(el("p", "target-scope", `Scope: ${target.scope}`));
   header.appendChild(identity);
 
-  header.appendChild(el("span", `status-badge badge-${target.status}`, statusLabel(target.status)));
-  header.appendChild(el("span", "target-duration", formatDuration(target.durationMs)));
+  header.appendChild(el("span", `status-badge badge-${safeAgg}`, statusLabel(safeAgg)));
 
   const toggle = el("span", "target-toggle");
   toggle.appendChild(el("span", "target-toggle-closed", "[open]"));
@@ -182,18 +507,29 @@ function renderTargetRow(target) {
   header.appendChild(toggle);
 
   summary.appendChild(header);
-  summary.appendChild(renderProofStrip(target));
+
+  const grid = el("div", "platform-grid");
+  for (const platformId of PLATFORMS) {
+    grid.appendChild(renderPlatformSummaryCell(platformId, target.results?.[platformId]));
+  }
+  summary.appendChild(grid);
+
+  const historyRow = renderHistoryStrip(target.id, historyDays);
+  if (historyRow) {
+    summary.appendChild(historyRow);
+  }
+
   details.appendChild(summary);
 
   const drawer = el("div", "target-details");
 
   const metaBar = el("div", "detail-meta-bar");
   const links = el("div", "detail-links");
-  const addLink = (href, label) => {
-    const safeHref = safeHttpsUrl(href);
-    if (!safeHref) return;
+  const addLink = (href, label, isRelative = false) => {
+    const resolved = isRelative ? href : safeHttpsUrl(href);
+    if (!resolved) return;
     const a = el("a", "link", label);
-    a.href = safeHref;
+    a.href = resolved;
     a.rel = "noopener noreferrer";
     a.target = "_blank";
     links.appendChild(a);
@@ -208,60 +544,64 @@ function renderTargetRow(target) {
   ) {
     addLink(`${REPO_BASE}/blob/main/${encodeURI(target.contractPath)}`, "Contract JSON");
   }
+  if (typeof target.id === "string" && SAFE_SLUG_REGEX.test(target.id)) {
+    addLink(`./badges/${target.id}-ubuntu.json`, "Ubuntu badge JSON", true);
+    addLink(`./badges/${target.id}-windows.json`, "Windows badge JSON", true);
+  }
   metaBar.appendChild(links);
-
-  const facts = el("div", "detail-facts");
-  const checkedEl = el("time", "", `checked ${formatLocalTime(target.checkedAt)}`);
-  checkedEl.dateTime = target.checkedAt || "";
-  checkedEl.title = target.checkedAt || "";
-  facts.appendChild(checkedEl);
-  if (target.fingerprint) {
-    facts.appendChild(el("span", "", `fingerprint ${target.fingerprint}`));
-  }
-  if (target.failureCategory) {
-    facts.appendChild(el("span", "", `category ${target.failureCategory}`));
-  }
-  metaBar.appendChild(facts);
   drawer.appendChild(metaBar);
 
-  if (target.notRunReason) {
-    drawer.appendChild(el("div", "notice-box", `Not run: ${target.notRunReason}`));
-  }
-
-  if (target.infraErrorMessage) {
+  if (target.versionDrift) {
     drawer.appendChild(
-      el("div", "notice-box is-infra", `Infrastructure error: ${target.infraErrorMessage}`),
+      el(
+        "div",
+        "notice-box is-infra",
+        `Version drift observed: Ubuntu installed ${uVer ?? "unknown"} while Windows installed ${wVer ?? "unknown"}. Drift is informational and does not fail a passing check.`,
+      ),
     );
   }
 
-  if (Array.isArray(target.steps) && target.steps.length > 0) {
-    const stepsWrap = el("div", "steps-table");
-    for (const step of target.steps) {
-      stepsWrap.appendChild(renderStepDetail(step));
-    }
-    drawer.appendChild(stepsWrap);
+  for (const platformId of PLATFORMS) {
+    drawer.appendChild(renderPlatformEvidenceSection(platformId, target.results?.[platformId]));
   }
 
   details.appendChild(drawer);
   return details;
 }
 
+async function fetchOptionalHistory() {
+  try {
+    const res = await fetch("./history.json", { cache: "no-store" });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!data || data.schemaVersion !== 1 || !Array.isArray(data.days)) {
+      return [];
+    }
+    return data.days.slice(-7);
+  } catch {
+    return [];
+  }
+}
+
 async function boot() {
   const banner = document.getElementById("state-banner");
   const list = document.getElementById("targets-list");
+  const envStrip = document.getElementById("platform-env-strip");
   const lastRunEl = document.getElementById("last-run");
   const commitWrap = document.getElementById("commit-wrap");
   const commitLink = document.getElementById("commit-link");
 
   try {
-    const res = await fetch("./status.json", { cache: "no-store" });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+    const [statusRes, historyDays] = await Promise.all([
+      fetch("./status.json", { cache: "no-store" }),
+      fetchOptionalHistory(),
+    ]);
+
+    if (!statusRes.ok) {
+      throw new Error(`HTTP ${statusRes.status}`);
     }
-    const data = await res.json();
-    if (!data || data.schemaVersion !== 1 || !Array.isArray(data.targets)) {
-      throw new Error("Invalid status.json shape");
-    }
+    const rawStatus = await statusRes.json();
+    const data = parseStatusDocument(rawStatus);
 
     lastRunEl.textContent = formatLocalTime(data.generatedAt);
     lastRunEl.dateTime = data.generatedAt || "";
@@ -273,6 +613,8 @@ async function boot() {
       commitWrap.hidden = false;
     }
 
+    renderPlatformEnvironments(envStrip, data.platforms);
+
     const setStat = (id, count) => {
       const node = document.getElementById(id);
       const val = Number(count ?? 0);
@@ -282,7 +624,13 @@ async function boot() {
     setStat("count-pass", data.summary?.passed);
     setStat("count-fail", data.summary?.failed);
     setStat("count-infra", data.summary?.infraErrors);
-    setStat("count-not-run", data.summary?.notRun);
+    setStat("count-incomplete", data.summary?.incomplete);
+
+    const checksNode = document.getElementById("count-checks");
+    const passedChecks = Number(data.summary?.platformPassed ?? 0);
+    const totalChecks = Number(data.summary?.platformChecks ?? 0);
+    checksNode.textContent = `${passedChecks}/${totalChecks}`;
+    checksNode.classList.toggle("is-zero", totalChecks === 0);
 
     list.replaceChildren();
     if (data.targets.length === 0) {
@@ -293,10 +641,18 @@ async function boot() {
     }
 
     for (const target of data.targets) {
-      list.appendChild(renderTargetRow(target));
+      list.appendChild(renderTargetRow(target, historyDays));
     }
 
-    banner.hidden = true;
+    if (data.legacyV1) {
+      banner.textContent =
+        "Showing a legacy schema v1 snapshot (Ubuntu only). Windows results will appear after the next scheduled run.";
+      banner.classList.add("is-notice");
+      banner.hidden = false;
+    } else {
+      banner.hidden = true;
+    }
+
     list.hidden = false;
   } catch {
     banner.textContent = "Status data could not be loaded.";

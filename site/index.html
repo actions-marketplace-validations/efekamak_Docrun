@@ -6,7 +6,7 @@
     <title>docrun - quickstart checks</title>
     <meta
       name="description"
-      content="docrun checks whether declared Node/npm quickstart contracts still work from a fresh temporary workspace."
+      content="Docrun runs small, declared package quickstarts from fresh workspaces on Ubuntu and Windows."
     />
     <meta
       http-equiv="Content-Security-Policy"
@@ -18,7 +18,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=2" />
   </head>
   <body>
     <div class="page">
@@ -44,9 +44,16 @@
         </div>
 
         <p class="thesis">
-          Declared install paths, tested from a fresh temp folder. Each row only shows what its
-          contract ran, not full SDK health.
+          Docrun runs small, declared package quickstarts from fresh workspaces on Ubuntu and
+          Windows. Each row reports only what its contract ran, not full SDK health.
         </p>
+
+        <section
+          id="platform-env-strip"
+          class="platform-env-strip"
+          aria-label="Recorded runner environments"
+          hidden
+        ></section>
 
         <section class="summary-strip" aria-label="Run summary">
           <div class="summary-stat stat-pass">
@@ -61,9 +68,13 @@
             <span id="count-infra" class="stat-value mono">-</span>
             <span class="stat-label">INFRA ERROR</span>
           </div>
-          <div class="summary-stat stat-not-run">
-            <span id="count-not-run" class="stat-value mono">-</span>
-            <span class="stat-label">NOT RUN</span>
+          <div class="summary-stat stat-incomplete">
+            <span id="count-incomplete" class="stat-value mono">-</span>
+            <span class="stat-label">INCOMPLETE</span>
+          </div>
+          <div class="summary-stat stat-checks">
+            <span id="count-checks" class="stat-value mono">-</span>
+            <span class="stat-label">PLATFORM CHECKS</span>
           </div>
         </section>
       </header>
@@ -76,26 +87,36 @@
           </div>
         </noscript>
         <div id="state-banner" class="state-banner" role="status" aria-live="polite">
-          Loading latest verification run…
+          Loading latest verification run...
         </div>
 
-        <section id="targets-list" class="targets-list" aria-label="Checked quickstart contracts" hidden></section>
+        <section
+          id="targets-list"
+          class="targets-list"
+          aria-label="Checked quickstart contracts"
+          hidden
+        ></section>
       </main>
 
       <footer class="footnote">
         <p>
-          <strong>Scope boundary:</strong> Runs execute declared <code>node</code> and
-          <code>npm</code> steps with <code>shell: false</code> in a fresh temporary workspace on
-          an ephemeral runner with no repository secrets. Output is bounded and redacted.
+          <strong>Scope boundary:</strong> Scheduled checks run declared <code>node</code> and
+          <code>npm</code> steps with <code>shell: false</code> in fresh temporary workspaces on
+          ephemeral Ubuntu and Windows runners with no repository secrets. Output is bounded and
+          redacted. History shows best-effort recent snapshots, not uptime or SLA.
         </p>
         <p class="footnote-links">
           <a class="link" href="https://github.com/efekamak/Docrun" rel="noopener noreferrer">Source on GitHub</a>
           <span aria-hidden="true">·</span>
           <a class="link" href="./status.json">Raw status.json</a>
+          <span aria-hidden="true">·</span>
+          <a class="link" href="./history.json">Raw history.json</a>
+          <span aria-hidden="true">·</span>
+          <a class="link" href="./badges/overall.json">Overall badge JSON</a>
         </p>
       </footer>
     </div>
 
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=2"></script>
   </body>
 </html>
