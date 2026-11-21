@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "demo-failing-quickstart",
+  "files": {
+    "package.json": "{\n  \"name\": \"consumer-demo\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "index.mjs": "console.log('legacy output v0');\n"
+  },
+  "steps": [
+    {
+      "id": "check-node",
+      "command": "node",
+      "args": ["--version"],
+      "timeoutMs": 15000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "run-example",
+      "command": "node",
+      "args": ["index.mjs"],
+      "timeoutMs": 15000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["quickstart ok: v2"]
+      }
+    },
+    {
+      "id": "should-not-run",
+      "command": "node",
+      "args": ["-e", "console.log('never reached')"],
+      "timeoutMs": 15000,
+      "expect": {
+        "exitCode": 0
+      }
+    }
+  ]
+}

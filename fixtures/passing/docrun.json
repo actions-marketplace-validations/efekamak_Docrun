@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "name": "demo-passing-quickstart",
+  "files": {
+    "package.json": "{\n  \"name\": \"consumer-demo\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "index.mjs": "import * as fs from 'node:fs';\nfs.writeFileSync('hello.txt', 'ready\\n');\nconsole.log('quickstart ok: v1');\n"
+  },
+  "steps": [
+    {
+      "id": "check-node",
+      "command": "node",
+      "args": ["--version"],
+      "timeoutMs": 15000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["v"]
+      }
+    },
+    {
+      "id": "run-example",
+      "command": "node",
+      "args": ["index.mjs"],
+      "timeoutMs": 15000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["quickstart ok: v1"],
+        "filesExist": ["hello.txt"]
+      }
+    }
+  ]
+}

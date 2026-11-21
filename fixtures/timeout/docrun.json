@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "name": "demo-timeout-quickstart",
+  "files": {
+    "hang.mjs": "setTimeout(() => { console.log('done'); }, 30000);\n"
+  },
+  "steps": [
+    {
+      "id": "hang-step",
+      "command": "node",
+      "args": ["hang.mjs"],
+      "timeoutMs": 500,
+      "expect": {
+        "exitCode": 0
+      }
+    }
+  ]
+}

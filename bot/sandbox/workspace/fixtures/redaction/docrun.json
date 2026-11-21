@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "name": "demo-redaction-quickstart",
+  "files": {
+    "leak.mjs": "console.error('Auth failed with Bearer supersecrettoken1234567890 and ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456 and sk-ant-1234567890abcdef123456');\nprocess.exit(1);\n"
+  },
+  "steps": [
+    {
+      "id": "run-leaky",
+      "command": "node",
+      "args": ["leak.mjs"],
+      "timeoutMs": 15000,
+      "expect": {
+        "exitCode": 0
+      }
+    }
+  ]
+}
