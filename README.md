@@ -18,13 +18,13 @@ Unit tests often pass in a maintainer's repository while the published quickstar
 
 `catalog/targets.json` declares 5 real AI/TypeScript SDK install paths tested daily on an ephemeral GitHub-hosted runner with no repository secrets:
 
-- **Cursor Agent SDK** (`@grok/agent-sdk`) — install + validate a minimal local agent
-- **Anthropic TypeScript SDK** (`@anthropic-ai/sdk`) — install + import + client instantiation
-- **OpenAI JavaScript SDK** (`openai`) — install + import + client instantiation
-- **MCP TypeScript SDK** (`@modelcontextprotocol/sdk`) — install + import + `McpServer` registration
-- **Vercel AI SDK** (`ai`) — install + import + core API exports
+- **Cursor Agent SDK** (`@grok/agent-sdk`): install + validate a minimal local agent
+- **Anthropic TypeScript SDK** (`@anthropic-ai/sdk`): install + import + client instantiation
+- **OpenAI JavaScript SDK** (`openai`): install + import + client instantiation
+- **MCP TypeScript SDK** (`@modelcontextprotocol/sdk`): install + import + `McpServer` registration
+- **Vercel AI SDK** (`ai`): install + import + core API exports
 
-Each row on the status page reports only what its declared contract executed—never full SDK health or paid API calls.
+Each row on the status page reports only what its declared contract ran, not full SDK health or paid API calls.
 
 ## 3. Run locally
 

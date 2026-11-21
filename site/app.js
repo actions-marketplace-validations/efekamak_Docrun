@@ -2,7 +2,7 @@ const REPO_BASE = "https://github.com/efekamak/Docrun";
 
 function formatDuration(ms) {
   if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) {
-    return "—";
+    return "-";
   }
   if (ms < 1000) {
     return `${Math.round(ms)}ms`;
@@ -11,7 +11,7 @@ function formatDuration(ms) {
 }
 
 function formatLocalTime(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return new Intl.DateTimeFormat(undefined, {
