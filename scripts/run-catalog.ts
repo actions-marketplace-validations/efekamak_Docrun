@@ -44,11 +44,20 @@ const outPath = outArg
   ? path.resolve(process.cwd(), outArg)
   : path.resolve(process.cwd(), "generated", `platform-${platform}.json`);
 
+const concurrencyArg = getArgValue("--concurrency=");
+const parsedConcurrency = concurrencyArg ? Number.parseInt(concurrencyArg, 10) : undefined;
+const defaultConcurrency = platform === "windows" ? 1 : 2;
+const concurrency =
+  parsedConcurrency !== undefined && Number.isInteger(parsedConcurrency) && parsedConcurrency >= 1
+    ? parsedConcurrency
+    : defaultConcurrency;
+
 const doc = await runPlatformCatalog({
   baseDir: process.cwd(),
   platform,
   sourceCommit: resolveSourceCommit(),
   targetIds,
+  concurrency,
 });
 
 await fs.mkdir(path.dirname(outPath), { recursive: true });
