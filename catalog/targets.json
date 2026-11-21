@@ -8,7 +8,7 @@
       "docsUrl": "https://cursor.com/docs/agent-sdk",
       "repositoryUrl": "https://github.com/cursor/cursor",
       "contractPath": "catalog/contracts/cursor-agent-sdk/docrun.json",
-      "scope": "install + validate a minimal local agent"
+      "scope": "install + scaffold a local agent + validate"
     },
     {
       "id": "anthropic-sdk",
@@ -45,6 +45,51 @@
       "repositoryUrl": "https://github.com/vercel/ai",
       "contractPath": "catalog/contracts/vercel-ai-sdk/docrun.json",
       "scope": "install + import + core API exports"
+    },
+    {
+      "id": "google-genai",
+      "name": "Google Gen AI SDK",
+      "package": "@google/genai",
+      "docsUrl": "https://googleapis.github.io/js-genai/",
+      "repositoryUrl": "https://github.com/googleapis/js-genai",
+      "contractPath": "catalog/contracts/google-genai/docrun.json",
+      "scope": "install + import + local client construction"
+    },
+    {
+      "id": "langchain",
+      "name": "LangChain JS",
+      "package": "langchain",
+      "docsUrl": "https://docs.langchain.com/oss/javascript/langchain/overview",
+      "repositoryUrl": "https://github.com/langchain-ai/langchainjs",
+      "contractPath": "catalog/contracts/langchain/docrun.json",
+      "scope": "install + import + local HumanMessage primitive"
+    },
+    {
+      "id": "supabase-js",
+      "name": "Supabase JS",
+      "package": "@supabase/supabase-js",
+      "docsUrl": "https://supabase.com/docs/reference/javascript/start",
+      "repositoryUrl": "https://github.com/supabase/supabase-js",
+      "contractPath": "catalog/contracts/supabase-js/docrun.json",
+      "scope": "install + import + local client with background auth disabled"
+    },
+    {
+      "id": "stripe",
+      "name": "Stripe Node SDK",
+      "package": "stripe",
+      "docsUrl": "https://stripe.com/docs/api?lang=node",
+      "repositoryUrl": "https://github.com/stripe/stripe-node",
+      "contractPath": "catalog/contracts/stripe/docrun.json",
+      "scope": "install + import + local client construction"
+    },
+    {
+      "id": "resend",
+      "name": "Resend Node SDK",
+      "package": "resend",
+      "docsUrl": "https://resend.com/docs/send-with-nodejs",
+      "repositoryUrl": "https://github.com/resend/resend-node",
+      "contractPath": "catalog/contracts/resend/docrun.json",
+      "scope": "install + import + local client construction"
     }
   ]
 }

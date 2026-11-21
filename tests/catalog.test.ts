@@ -17,16 +17,25 @@ import {
 } from "../scripts/catalog-lib.js";
 import type { QuickstartContract } from "../bot/lib/contract.js";
 import type { QuickstartRunResult } from "../bot/lib/execute.js";
+import { ShieldsEndpointSchema } from "../scripts/badges.js";
+import { HistoryDocumentSchema, mergeHistory } from "../scripts/history.js";
+import { mergePlatformRuns } from "../scripts/merge-platform-results.js";
+import {
+  PlatformRunDocumentSchema,
+  summarizePlatformRun,
+  toPlatformPartialTarget,
+  type PlatformId,
+} from "../scripts/status-v2.js";
 
 const REPO_ROOT = process.cwd();
 
 describe("catalog validation and security", () => {
-  it("validates the real repository catalog/targets.json and all 5 contracts", async () => {
+  it("validates the real repository catalog/targets.json and all 10 contracts", async () => {
     const outcome = await loadAndValidateCatalog(REPO_ROOT, "catalog/targets.json");
     assert.equal(outcome.ok, true);
     if (!outcome.ok) return;
-    assert.equal(outcome.catalog.targets.length, 5);
-    assert.equal(outcome.contracts.size, 5);
+    assert.equal(outcome.catalog.targets.length, 10);
+    assert.equal(outcome.contracts.size, 10);
   });
 
   it("rejects duplicate target IDs, repo-escaping paths, and non-HTTPS URLs", () => {
@@ -195,7 +204,7 @@ describe("catalog validation and security", () => {
 });
 
 describe("catalog runner and status site integration", () => {
-  it("runs a 2-target catalog (1 pass, 1 redacted fail) and builds the static status site", async () => {
+  it("runs a 2-target catalog (1 pass, 1 redacted fail) and builds the v2 status site", async () => {
     const tmpBase = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-cat-test-"));
     try {
       await fs.mkdir(path.join(tmpBase, "contracts"), { recursive: true });
@@ -266,22 +275,114 @@ describe("catalog runner and status site integration", () => {
       assert.equal(failedTarget.steps[1].status, "skipped");
       assert.doesNotMatch(JSON.stringify(status), /ghs_SECRETTOKEN1234567890123456/);
 
+      assert.equal(status.schemaVersion, 1);
+
+      const catalog = CatalogSchema.parse(
+        JSON.parse(await fs.readFile(path.join(tmpBase, "targets.json"), "utf8")),
+      );
+      const environmentFor = (platform: PlatformId) => ({
+        osName: platform === "ubuntu" ? "Ubuntu" : "Windows",
+        osVersion: platform === "ubuntu" ? "24.04.1" : "10.0.26200",
+        osRelease: platform === "ubuntu" ? "6.8.0" : "10.0.26200",
+        arch: "x64",
+        nodeVersion: "v22.14.0",
+        npmVersion: "10.9.2",
+        runnerImage: platform === "ubuntu" ? "ubuntu-24.04" : "windows-2025",
+      });
+      const toPlatformRun = (platform: PlatformId) => {
+        const targets = status.targets.map((target) => toPlatformPartialTarget(target.id, target));
+        return PlatformRunDocumentSchema.parse({
+          schemaVersion: 2,
+          kind: "platform-run",
+          platform,
+          generatedAt: status.generatedAt,
+          sourceCommit: status.sourceCommit,
+          environment: environmentFor(platform),
+          summary: summarizePlatformRun(targets),
+          targets,
+        });
+      };
+      const aggregate = mergePlatformRuns({
+        catalog,
+        platforms: {
+          ubuntu: { ok: true, document: toPlatformRun("ubuntu") },
+          windows: { ok: true, document: toPlatformRun("windows") },
+        },
+        sourceCommit: status.sourceCommit,
+        generatedAt: status.generatedAt,
+      });
+      const history = mergeHistory(null, aggregate);
+
       const statusPath = path.join(tmpBase, "status.json");
+      const historyPath = path.join(tmpBase, "history.json");
       const outDir = path.join(tmpBase, "dist-site");
-      await fs.writeFile(statusPath, JSON.stringify(status, null, 2), "utf8");
+      await fs.writeFile(statusPath, `${JSON.stringify(aggregate, null, 2)}\n`, "utf8");
+      await fs.writeFile(historyPath, `${JSON.stringify(history, null, 2)}\n`, "utf8");
 
       await buildStatusSite({
         siteSrcDir: path.join(REPO_ROOT, "site"),
         statusJsonPath: statusPath,
+        historyJsonPath: historyPath,
         outDir,
       });
 
       const builtFiles = await fs.readdir(outDir);
-      assert.ok(builtFiles.includes("index.html"));
-      assert.ok(builtFiles.includes("styles.css"));
-      assert.ok(builtFiles.includes("app.js"));
-      assert.ok(builtFiles.includes("status.json"));
-      assert.ok(builtFiles.includes(".nojekyll"));
+      for (const required of ["index.html", "styles.css", "app.js", "status.json", "history.json", ".nojekyll"]) {
+        assert.ok(builtFiles.includes(required), required);
+      }
+      for (const asset of ["index.html", "styles.css", "app.js"]) {
+        const stat = await fs.stat(path.join(outDir, asset));
+        assert.ok(stat.size > 0, asset);
+      }
+
+      const builtStatus = JSON.parse(await fs.readFile(path.join(outDir, "status.json"), "utf8"));
+      assert.equal(builtStatus.schemaVersion, 2);
+      assert.equal(builtStatus.kind, "aggregate-status");
+      assert.equal(builtStatus.overallStatus, "failed");
+      assert.deepEqual(
+        builtStatus.targets.map((target: { id: string }) => target.id),
+        ["pass-target", "fail-target"],
+      );
+
+      const builtHistory = HistoryDocumentSchema.parse(
+        JSON.parse(await fs.readFile(path.join(outDir, "history.json"), "utf8")),
+      );
+      assert.equal(builtHistory.days.length, 1);
+      const historyText = JSON.stringify(builtHistory);
+      assert.equal(historyText.includes("stdout"), false);
+      assert.equal(historyText.includes("stderr"), false);
+      assert.equal(historyText.includes("ghs_SECRETTOKEN1234567890123456"), false);
+
+      const badgeNames = await fs.readdir(path.join(outDir, "badges"));
+      assert.deepEqual(
+        [...badgeNames].sort(),
+        [
+          "fail-target-ubuntu.json",
+          "fail-target-windows.json",
+          "overall.json",
+          "pass-target-ubuntu.json",
+          "pass-target-windows.json",
+        ],
+      );
+      for (const name of badgeNames) {
+        const badge = ShieldsEndpointSchema.parse(
+          JSON.parse(await fs.readFile(path.join(outDir, "badges", name), "utf8")),
+        );
+        assert.ok(badge.label.length <= 64);
+        assert.ok(badge.message.length <= 64);
+      }
+      const overallBadge = ShieldsEndpointSchema.parse(
+        JSON.parse(await fs.readFile(path.join(outDir, "badges", "overall.json"), "utf8")),
+      );
+      assert.equal(overallBadge.color, "red");
+      const passBadge = ShieldsEndpointSchema.parse(
+        JSON.parse(await fs.readFile(path.join(outDir, "badges", "pass-target-ubuntu.json"), "utf8")),
+      );
+      assert.equal(passBadge.color, "green");
+      const failBadge = ShieldsEndpointSchema.parse(
+        JSON.parse(await fs.readFile(path.join(outDir, "badges", "fail-target-windows.json"), "utf8")),
+      );
+      assert.equal(failBadge.color, "red");
 
       await assert.rejects(
         () =>
@@ -293,14 +394,14 @@ describe("catalog runner and status site integration", () => {
         /Unknown catalog target id/,
       );
 
-      const badStatusPath = path.join(tmpBase, "bad-status.json");
-      await fs.writeFile(badStatusPath, "{}", "utf8");
+      const v1StatusPath = path.join(tmpBase, "status-v1.json");
+      await fs.writeFile(v1StatusPath, `${JSON.stringify(status, null, 2)}\n`, "utf8");
       await assert.rejects(
         () =>
           buildStatusSite({
             siteSrcDir: path.join(REPO_ROOT, "site"),
-            statusJsonPath: badStatusPath,
-            outDir: path.join(tmpBase, "dist-bad"),
+            statusJsonPath: v1StatusPath,
+            outDir: path.join(tmpBase, "dist-v1"),
           }),
         /Invalid status\.json schema/,
       );

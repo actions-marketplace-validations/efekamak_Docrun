@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "stripe",
+  "files": {
+    "package.json": "{\n  \"name\": \"stripe-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import Stripe from \"stripe\";\n\nconst stripe = new Stripe(\"docrun-placeholder-key\");\nif (stripe.constructor.name !== \"Stripe\" || typeof stripe.customers?.create !== \"function\") {\n  throw new Error(\"Unexpected Stripe client\");\n}\nconsole.log(\"stripe-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "stripe@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "stripe", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-client",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["stripe-ready"]
+      }
+    }
+  ]
+}

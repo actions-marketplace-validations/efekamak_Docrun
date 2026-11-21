@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "google-genai",
+  "files": {
+    "package.json": "{\n  \"name\": \"google-genai-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { GoogleGenAI } from \"@google/genai\";\n\nconst ai = new GoogleGenAI({ apiKey: \"docrun-placeholder-key\" });\nif (ai.constructor.name !== \"GoogleGenAI\" || ai.vertexai !== false) {\n  throw new Error(\"Unexpected GoogleGenAI client\");\n}\nconsole.log(\"google-genai-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "@google/genai@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "@google/genai", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-client",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["google-genai-ready"]
+      }
+    }
+  ]
+}

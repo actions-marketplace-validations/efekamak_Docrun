@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "supabase-js",
+  "files": {
+    "package.json": "{\n  \"name\": \"supabase-js-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { createClient } from \"@supabase/supabase-js\";\n\nconst supabase = createClient(\"https://placeholder.supabase.co\", \"docrun-placeholder-key\", {\n  auth: {\n    persistSession: false,\n    autoRefreshToken: false,\n    detectSessionInUrl: false,\n  },\n});\nif (typeof supabase.from !== \"function\") {\n  throw new Error(\"Expected supabase.from to be a function\");\n}\nconsole.log(\"supabase-js-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "@supabase/supabase-js@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "@supabase/supabase-js", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-client",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["supabase-js-ready"]
+      }
+    }
+  ]
+}

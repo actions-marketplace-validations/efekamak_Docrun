@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "resend",
+  "files": {
+    "package.json": "{\n  \"name\": \"resend-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { Resend } from \"resend\";\n\nconst resend = new Resend(\"docrun-placeholder-key\");\nif (resend.constructor.name !== \"Resend\" || typeof resend.emails?.send !== \"function\") {\n  throw new Error(\"Unexpected Resend client\");\n}\nconsole.log(\"resend-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "resend@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "resend", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-client",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["resend-ready"]
+      }
+    }
+  ]
+}

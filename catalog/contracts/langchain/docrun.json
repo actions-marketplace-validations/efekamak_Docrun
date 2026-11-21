@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "langchain",
+  "files": {
+    "package.json": "{\n  \"name\": \"langchain-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { HumanMessage } from \"langchain\";\n\nconst message = new HumanMessage(\"docrun-local-message\");\nif (message.getType() !== \"human\" || message.content !== \"docrun-local-message\") {\n  throw new Error(\"Unexpected HumanMessage\");\n}\nconsole.log(\"langchain-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "langchain@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "langchain", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-primitive",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["langchain-ready"]
+      }
+    }
+  ]
+}
