@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as z from "zod/v4";
 import {
+  LIMITS,
   isSafeRelativePath,
   loadContractFile,
   resolveContainedPath,
@@ -11,6 +12,7 @@ import {
 import {
   redactSecrets,
   runQuickstartContract,
+  truncateUtf8,
   type AssertionResult,
   type QuickstartRunResult,
 } from "../bot/lib/execute.js";
@@ -283,17 +285,7 @@ export function sanitizePublicExcerpt(
   for (const [pattern, replacement] of LOCAL_PATH_PATTERNS) {
     clean = clean.replace(pattern, replacement);
   }
-  const buf = Buffer.from(clean, "utf8");
-  if (buf.byteLength <= maxBytes) {
-    return { text: clean, truncated: false };
-  }
-  const headBytes = Math.floor(maxBytes * 0.45);
-  const tailBytes = Math.floor(maxBytes * 0.45);
-  const omitted = buf.byteLength - headBytes - tailBytes;
-  return {
-    text: `${buf.subarray(0, headBytes).toString("utf8")}\n... [truncated ${omitted} bytes] ...\n${buf.subarray(buf.byteLength - tailBytes).toString("utf8")}`,
-    truncated: true,
-  };
+  return truncateUtf8(clean, maxBytes);
 }
 
 export function normalizeTargetResult(
@@ -450,7 +442,10 @@ export type RunCatalogOptions = {
   concurrency?: number;
   maxCatalogTimeoutMs?: number;
   targetIds?: string[];
-  executor?: (contract: QuickstartContract) => Promise<QuickstartRunResult>;
+  executor?: (
+    contract: QuickstartContract,
+    remainingMs: number,
+  ) => Promise<QuickstartRunResult>;
 };
 
 export async function runCatalog(options: RunCatalogOptions): Promise<StatusDocument> {
@@ -473,7 +468,12 @@ export async function runCatalog(options: RunCatalogOptions): Promise<StatusDocu
   );
   const maxCatalogTimeoutMs =
     options.maxCatalogTimeoutMs ?? CATALOG_LIMITS.MAX_CATALOG_TIMEOUT_MS;
-  const executor = options.executor ?? ((contract) => runQuickstartContract(contract));
+  const executor =
+    options.executor ??
+    ((contract, remainingMs) =>
+      runQuickstartContract(contract, {
+        maxRunTimeoutMs: Math.min(LIMITS.MAX_RUN_TIMEOUT_MS, remainingMs),
+      }));
   const startedMs = Date.now();
 
   const results: PublicTargetResult[] = new Array(allTargets.length);
@@ -494,13 +494,14 @@ export async function runCatalog(options: RunCatalogOptions): Promise<StatusDocu
         continue;
       }
 
-      if (Date.now() - startedMs >= maxCatalogTimeoutMs) {
+      const remainingMs = maxCatalogTimeoutMs - (Date.now() - startedMs);
+      if (remainingMs <= 0) {
         results[idx] = buildNotRunResult(target, "Catalog time budget exceeded.");
         continue;
       }
 
       try {
-        const runResult = await executor(contract);
+        const runResult = await executor(contract, remainingMs);
         results[idx] = normalizeTargetResult(target, contract, runResult);
       } catch (err) {
         results[idx] = buildInfraErrorResult(target, err);

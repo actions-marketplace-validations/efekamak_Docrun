@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -106,6 +107,20 @@ describe("contract validation", () => {
       steps: [{ id: "run", command: "node", args: ["-v"], timeoutMs: 5000, expect: { exitCode: 0 } }],
     });
     assert.equal(withEnv.ok, false);
+  });
+
+  it("rejects oversized contract files before parsing", async () => {
+    const tmpBase = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-size-test-"));
+    try {
+      await fs.writeFile(path.join(tmpBase, "huge.json"), " ".repeat(600_000), "utf8");
+      const res = await loadContractFile(tmpBase, "huge.json");
+      assert.equal(res.ok, false);
+      if (!res.ok) {
+        assert.match(res.errors[0], /exceeds/);
+      }
+    } finally {
+      await fs.rm(tmpBase, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
   });
 });
 
@@ -221,13 +236,14 @@ describe("deterministic runner", () => {
     assert.match(direct, /\[REDACTED_JWT\]/);
   });
 
-  it("truncates large output while preserving head and tail", () => {
-    const big = "HEAD_MARKER_" + "x".repeat(4000) + "_TAIL_MARKER";
+  it("truncates large output while preserving head, tail, and valid UTF-8 boundaries", () => {
+    const big = "HEAD_ğüşıöç_" + "🚀".repeat(1200) + "_ğüşıöç_TAIL";
     const bounded = boundOutput(big, 512);
     assert.equal(bounded.truncated, true);
-    assert.match(bounded.text, /HEAD_MARKER_/);
-    assert.match(bounded.text, /_TAIL_MARKER/);
+    assert.match(bounded.text, /HEAD_ğüşıöç_/);
+    assert.match(bounded.text, /_ğüşıöç_TAIL/);
     assert.match(bounded.text, /truncated \d+ bytes/);
+    assert.equal(bounded.text.includes("\uFFFD"), false);
   });
 
   it("preserves temporary workspace only when preserveWorkspace is true", async () => {

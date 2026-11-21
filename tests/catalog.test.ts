@@ -108,6 +108,7 @@ describe("catalog validation and security", () => {
       assert.equal(env.GITHUB_TOKEN, undefined);
       assert.equal(env.CURSOR_API_KEY, undefined);
       assert.equal(env.npm_config_cache, path.join("/tmp/docrun-abc", ".npm-cache"));
+      assert.equal(env.npm_config_userconfig, path.join("/tmp/docrun-abc", ".npmrc-empty"));
     } finally {
       if (prevGh === undefined) delete process.env.GITHUB_TOKEN;
       else process.env.GITHUB_TOKEN = prevGh;

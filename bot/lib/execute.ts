@@ -6,6 +6,7 @@ import * as path from "node:path";
 import {
   LIMITS,
   checkReadmeDrift,
+  isRealPathContained,
   resolveContainedPath,
   type AllowedCommand,
   type FailureCategory,
@@ -107,25 +108,54 @@ export function redactSecrets(text: string): string {
   return out;
 }
 
+function sliceUtf8Safe(buf: Buffer, start: number, end: number): string {
+  // Advance start past any UTF-8 continuation bytes (10xxxxxx).
+  let safeStart = start;
+  while (safeStart < end && (buf[safeStart] & 0xc0) === 0x80) {
+    safeStart += 1;
+  }
+  // Pull end back if it splits a multi-byte UTF-8 sequence.
+  let safeEnd = end;
+  if (safeEnd > safeStart && safeEnd < buf.length) {
+    let lead = safeEnd - 1;
+    while (lead > safeStart && (buf[lead] & 0xc0) === 0x80) {
+      lead -= 1;
+    }
+    const first = buf[lead];
+    const seqLen =
+      (first & 0x80) === 0 ? 1 : (first & 0xe0) === 0xc0 ? 2 : (first & 0xf0) === 0xe0 ? 3 : 4;
+    if (lead + seqLen > safeEnd) {
+      safeEnd = lead;
+    }
+  }
+  return buf.subarray(safeStart, safeEnd).toString("utf8");
+}
+
+export function truncateUtf8(
+  text: string,
+  maxBytes: number,
+): { text: string; truncated: boolean } {
+  const buf = Buffer.from(text, "utf8");
+  if (buf.byteLength <= maxBytes) {
+    return { text, truncated: false };
+  }
+  const headBytes = Math.floor(maxBytes * 0.45);
+  const tailBytes = Math.floor(maxBytes * 0.45);
+  const omitted = buf.byteLength - headBytes - tailBytes;
+  const head = sliceUtf8Safe(buf, 0, headBytes);
+  const tail = sliceUtf8Safe(buf, buf.byteLength - tailBytes, buf.byteLength);
+  return {
+    text: `${head}\n... [truncated ${omitted} bytes] ...\n${tail}`,
+    truncated: true,
+  };
+}
+
 export function boundOutput(
   raw: string,
   maxBytes: number = LIMITS.MAX_STREAM_BYTES,
 ): { text: string; truncated: boolean } {
   const cleaned = redactSecrets(stripAnsi(raw));
-  const buf = Buffer.from(cleaned, "utf8");
-  if (buf.byteLength <= maxBytes) {
-    return { text: cleaned, truncated: false };
-  }
-
-  const headBytes = Math.floor(maxBytes * 0.45);
-  const tailBytes = Math.floor(maxBytes * 0.45);
-  const omitted = buf.byteLength - headBytes - tailBytes;
-  const head = buf.subarray(0, headBytes).toString("utf8");
-  const tail = buf.subarray(buf.byteLength - tailBytes).toString("utf8");
-  return {
-    text: `${head}\n... [truncated ${omitted} bytes] ...\n${tail}`,
-    truncated: true,
-  };
+  return truncateUtf8(cleaned, maxBytes);
 }
 
 export function buildMinimalEnv(workspaceDir?: string): NodeJS.ProcessEnv {
@@ -165,6 +195,7 @@ export function buildMinimalEnv(workspaceDir?: string): NodeJS.ProcessEnv {
   env.npm_config_audit = "false";
   if (workspaceDir) {
     env.npm_config_cache = path.join(workspaceDir, ".npm-cache");
+    env.npm_config_userconfig = path.join(workspaceDir, ".npmrc-empty");
   }
   return env;
 }
@@ -265,6 +296,73 @@ type RawSpawnResult = {
   durationMs: number;
 };
 
+class BoundedStreamCapture {
+  private readonly headLimit: number;
+  private readonly tailLimit: number;
+  private headChunks: Buffer[] = [];
+  private headBytes = 0;
+  private tailChunks: Buffer[] = [];
+  private tailBytes = 0;
+  private totalBytes = 0;
+  private _capped = false;
+
+  constructor(maxBytes: number) {
+    this.headLimit = Math.max(64, Math.floor(maxBytes * 0.45));
+    this.tailLimit = Math.max(64, Math.floor(maxBytes * 0.45));
+  }
+
+  get capped(): boolean {
+    return this._capped;
+  }
+
+  push(chunk: Buffer): void {
+    if (chunk.length === 0) return;
+    this.totalBytes += chunk.length;
+
+    let remainder = chunk;
+    if (this.headBytes < this.headLimit) {
+      const take = Math.min(this.headLimit - this.headBytes, remainder.length);
+      this.headChunks.push(remainder.subarray(0, take));
+      this.headBytes += take;
+      remainder = remainder.subarray(take);
+    }
+
+    if (remainder.length === 0) return;
+
+    this.tailChunks.push(remainder);
+    this.tailBytes += remainder.length;
+
+    if (this.tailBytes > this.tailLimit) {
+      this._capped = true;
+      let overflow = this.tailBytes - this.tailLimit;
+      while (overflow > 0 && this.tailChunks.length > 0) {
+        const first = this.tailChunks[0];
+        if (first.length <= overflow) {
+          this.tailChunks.shift();
+          this.tailBytes -= first.length;
+          overflow -= first.length;
+        } else {
+          this.tailChunks[0] = first.subarray(overflow);
+          this.tailBytes -= overflow;
+          overflow = 0;
+        }
+      }
+    }
+  }
+
+  toString(): string {
+    const headBuf = Buffer.concat(this.headChunks, this.headBytes);
+    const tailBuf = Buffer.concat(this.tailChunks, this.tailBytes);
+    if (!this._capped) {
+      return Buffer.concat([headBuf, tailBuf]).toString("utf8");
+    }
+    const omitted = Math.max(0, this.totalBytes - this.headBytes - this.tailBytes);
+    const head = sliceUtf8Safe(headBuf, 0, headBuf.length);
+    const tail = sliceUtf8Safe(tailBuf, 0, tailBuf.length);
+    return `${head}\n... [stream capped: ${omitted} bytes omitted] ...\n${tail}`;
+  }
+}
+
 async function spawnStepProcess(
   step: QuickstartStep,
   cwd: string,
@@ -276,10 +374,8 @@ async function spawnStepProcess(
   const captureCap = maxStreamBytes * 4;
 
   return new Promise<RawSpawnResult>((resolve) => {
-    let stdout = "";
-    let stderr = "";
-    let stdoutCapped = false;
-    let stderrCapped = false;
+    const stdoutCapture = new BoundedStreamCapture(captureCap);
+    const stderrCapture = new BoundedStreamCapture(captureCap);
     let timedOut = false;
     let settled = false;
 
@@ -296,36 +392,12 @@ async function spawnStepProcess(
       killProcessTree(child.pid);
     }, timeoutMs);
 
-    const appendBounded = (
-      current: string,
-      chunk: Buffer,
-    ): { text: string; capped: boolean } => {
-      const next = current + chunk.toString("utf8");
-      if (Buffer.byteLength(next, "utf8") <= captureCap) {
-        return { text: next, capped: false };
-      }
-      const headLen = Math.floor(captureCap * 0.45);
-      const tailLen = Math.floor(captureCap * 0.45);
-      const buf = Buffer.from(next, "utf8");
-      return {
-        text:
-          buf.subarray(0, headLen).toString("utf8") +
-          "\n... [stream capped during capture] ...\n" +
-          buf.subarray(buf.byteLength - tailLen).toString("utf8"),
-        capped: true,
-      };
-    };
-
     child.stdout?.on("data", (chunk: Buffer) => {
-      const res = appendBounded(stdout, chunk);
-      stdout = res.text;
-      if (res.capped) stdoutCapped = true;
+      stdoutCapture.push(chunk);
     });
 
     child.stderr?.on("data", (chunk: Buffer) => {
-      const res = appendBounded(stderr, chunk);
-      stderr = res.text;
-      if (res.capped) stderrCapped = true;
+      stderrCapture.push(chunk);
     });
 
     child.on("error", (err) => {
@@ -337,10 +409,10 @@ async function spawnStepProcess(
         signal: null,
         timedOut,
         spawnError: err.message,
-        stdout,
-        stderr,
-        stdoutCapped,
-        stderrCapped,
+        stdout: stdoutCapture.toString(),
+        stderr: stderrCapture.toString(),
+        stdoutCapped: stdoutCapture.capped,
+        stderrCapped: stderrCapture.capped,
         durationMs: Date.now() - started,
       });
     });
@@ -354,10 +426,10 @@ async function spawnStepProcess(
         signal: signal ?? null,
         timedOut,
         spawnError: null,
-        stdout,
-        stderr,
-        stdoutCapped,
-        stderrCapped,
+        stdout: stdoutCapture.toString(),
+        stderr: stderrCapture.toString(),
+        stdoutCapped: stdoutCapture.capped,
+        stderrCapped: stderrCapture.capped,
         durationMs: Date.now() - started,
       });
     });
@@ -405,12 +477,7 @@ async function evaluateStepAssertions(
     let exists = false;
     let observed = "missing";
     if (await fileExists(fullPath)) {
-      const [realWorkspace, realTarget] = await Promise.all([
-        fs.realpath(workspaceDir),
-        fs.realpath(fullPath),
-      ]);
-      const rel = path.relative(realWorkspace, realTarget);
-      if (!rel.startsWith("..") && !path.isAbsolute(rel) && rel !== "") {
+      if (await isRealPathContained(workspaceDir, fullPath)) {
         exists = true;
         observed = "exists";
       } else {
@@ -513,6 +580,9 @@ export async function runQuickstartContract(
     readmeDrift.checked = true;
     try {
       const readmeFull = resolveContainedPath(options.readmeBaseDir, contract.readmePath);
+      if (!(await isRealPathContained(options.readmeBaseDir, readmeFull))) {
+        throw new Error(`README symlink escapes base directory: "${contract.readmePath}"`);
+      }
       const readmeContent = await fs.readFile(readmeFull, "utf8");
       const check = checkReadmeDrift(readmeContent, contract);
       readmeDrift.ok = check.ok;

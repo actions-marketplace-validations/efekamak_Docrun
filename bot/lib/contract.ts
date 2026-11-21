@@ -6,6 +6,7 @@ export const LIMITS = {
   DEFAULT_STEP_TIMEOUT_MS: 120_000,
   MAX_RUN_TIMEOUT_MS: 480_000,
   MAX_STREAM_BYTES: 65_536,
+  MAX_CONTRACT_FILE_BYTES: 524_288,
   MAX_STEPS: 20,
   MAX_FILES: 20,
   MAX_TOTAL_FILE_BYTES: 262_144,
@@ -68,6 +69,15 @@ export function resolveContainedPath(baseDir: string, relativePath: string): str
     throw new Error(`Path escapes base directory: "${relativePath}"`);
   }
   return resolvedTarget;
+}
+
+export async function isRealPathContained(baseDir: string, targetPath: string): Promise<boolean> {
+  const [realBase, realTarget] = await Promise.all([
+    fs.realpath(baseDir),
+    fs.realpath(targetPath),
+  ]);
+  const rel = path.relative(realBase, realTarget);
+  return !rel.startsWith("..") && !path.isAbsolute(rel) && rel !== "";
 }
 
 const SafeRelativePathSchema = z
@@ -188,6 +198,27 @@ export async function loadContractFile(
 
   let text: string;
   try {
+    const stat = await fs.stat(fullPath);
+    if (!stat.isFile()) {
+      return {
+        ok: false,
+        errors: [`Contract path "${contractPath}" is not a regular file.`],
+      };
+    }
+    if (stat.size > LIMITS.MAX_CONTRACT_FILE_BYTES) {
+      return {
+        ok: false,
+        errors: [
+          `Contract "${contractPath}" exceeds ${LIMITS.MAX_CONTRACT_FILE_BYTES} bytes (got ${stat.size}).`,
+        ],
+      };
+    }
+    if (!(await isRealPathContained(baseDir, fullPath))) {
+      return {
+        ok: false,
+        errors: [`Contract symlink escapes workspace: "${contractPath}".`],
+      };
+    }
     text = await fs.readFile(fullPath, "utf8");
   } catch (err) {
     return {

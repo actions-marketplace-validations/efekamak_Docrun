@@ -53,6 +53,16 @@ function stepSymbol(status) {
   }
 }
 
+function safeHttpsUrl(candidate) {
+  if (typeof candidate !== "string") return null;
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === "https:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -180,15 +190,17 @@ function renderTargetRow(target) {
   const metaBar = el("div", "detail-meta-bar");
   const links = el("div", "detail-links");
   const addLink = (href, label) => {
+    const safeHref = safeHttpsUrl(href);
+    if (!safeHref) return;
     const a = el("a", "link", label);
-    a.href = href;
+    a.href = safeHref;
     a.rel = "noopener noreferrer";
     a.target = "_blank";
     links.appendChild(a);
   };
   addLink(target.docsUrl, "Official docs");
   addLink(target.repositoryUrl, "Repository");
-  if (target.contractPath) {
+  if (typeof target.contractPath === "string" && !target.contractPath.includes("..")) {
     addLink(`${REPO_BASE}/blob/main/${target.contractPath}`, "Contract JSON");
   }
   metaBar.appendChild(links);
@@ -250,9 +262,9 @@ async function boot() {
     lastRunEl.dateTime = data.generatedAt || "";
     lastRunEl.title = data.generatedAt || "";
 
-    if (data.sourceCommit) {
+    if (typeof data.sourceCommit === "string" && /^[0-9a-f]{7,40}$/i.test(data.sourceCommit)) {
       commitLink.textContent = data.sourceCommit;
-      commitLink.href = `${REPO_BASE}/commit/${data.sourceCommit}`;
+      commitLink.href = `${REPO_BASE}/commit/${encodeURIComponent(data.sourceCommit)}`;
       commitWrap.hidden = false;
     }
 
