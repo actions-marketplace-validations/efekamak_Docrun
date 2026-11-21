@@ -9,31 +9,118 @@ concurrency:
   group: "pages-status"
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
-  check-catalog:
+  check-ubuntu:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          node-version: "22"
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
           cache: npm
 
       - run: npm ci
       - run: npm run catalog:validate
-      - run: npm run catalog:run
+      - run: npm run catalog:run -- --platform=ubuntu --out=generated/platform-ubuntu.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: platform-ubuntu
+          path: generated/platform-ubuntu.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  check-windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+      - run: npm run catalog:validate
+      - run: npm run catalog:run -- --platform=windows --out=generated/platform-windows.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: platform-windows
+          path: generated/platform-windows.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  aggregate-and-build:
+    needs: [check-ubuntu, check-windows]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+      - run: npm run catalog:validate
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true
+        with:
+          name: platform-ubuntu
+          path: generated/artifacts/ubuntu
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true
+        with:
+          name: platform-windows
+          path: generated/artifacts/windows
+
+      - name: Aggregate platform results, history, and badges
+        env:
+          UBUNTU_JOB_RESULT: ${{ needs.check-ubuntu.result }}
+          WINDOWS_JOB_RESULT: ${{ needs.check-windows.result }}
+        run: >
+          npm run status:aggregate --
+          --ubuntu=generated/artifacts/ubuntu/platform-ubuntu.json
+          --windows=generated/artifacts/windows/platform-windows.json
+          --ubuntu-job-result="${UBUNTU_JOB_RESULT}"
+          --windows-job-result="${WINDOWS_JOB_RESULT}"
+          --history-url=https://efekamak.github.io/Docrun/history.json
+          --out-dir=generated
+
       - run: npm run site:build
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: dist-site
 
   deploy:
-    needs: check-catalog
+    needs: aggregate-and-build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -44,4 +131,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
