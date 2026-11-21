@@ -282,6 +282,28 @@ describe("catalog runner and status site integration", () => {
       assert.ok(builtFiles.includes("app.js"));
       assert.ok(builtFiles.includes("status.json"));
       assert.ok(builtFiles.includes(".nojekyll"));
+
+      await assert.rejects(
+        () =>
+          runCatalog({
+            baseDir: tmpBase,
+            catalogPath: "targets.json",
+            targetIds: ["does-not-exist"],
+          }),
+        /Unknown catalog target id/,
+      );
+
+      const badStatusPath = path.join(tmpBase, "bad-status.json");
+      await fs.writeFile(badStatusPath, "{}", "utf8");
+      await assert.rejects(
+        () =>
+          buildStatusSite({
+            siteSrcDir: path.join(REPO_ROOT, "site"),
+            statusJsonPath: badStatusPath,
+            outDir: path.join(tmpBase, "dist-bad"),
+          }),
+        /Invalid status\.json schema/,
+      );
     } finally {
       await fs.rm(tmpBase, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }

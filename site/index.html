@@ -8,6 +8,10 @@
       name="description"
       content="docrun checks whether declared Node/npm quickstart contracts still work from a fresh temporary workspace."
     />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none';"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -65,6 +69,12 @@
       </header>
 
       <main id="main-content">
+        <noscript>
+          <div class="state-banner is-error">
+            JavaScript is required to render the verification table. Inspect
+            <a class="link" href="./status.json">status.json</a> directly.
+          </div>
+        </noscript>
         <div id="state-banner" class="state-banner" role="status" aria-live="polite">
           Loading latest verification run…
         </div>

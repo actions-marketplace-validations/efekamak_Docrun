@@ -4,6 +4,7 @@ import * as z from "zod/v4";
 import { loadContractFile } from "../lib/contract.js";
 import {
   buildInvalidContractResult,
+  redactSecrets,
   runQuickstartContract,
   type QuickstartRunResult,
 } from "../lib/execute.js";
@@ -27,7 +28,7 @@ export default defineTool({
   effect: "write",
   dryRunResult: ({ contractPath }): QuickstartRunResult => ({
     runId: "dry-run",
-    contractName: contractPath,
+    contractName: redactSecrets(contractPath).slice(0, 120),
     schemaVersion: 1,
     status: "passed",
     failureCategory: null,

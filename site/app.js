@@ -200,8 +200,13 @@ function renderTargetRow(target) {
   };
   addLink(target.docsUrl, "Official docs");
   addLink(target.repositoryUrl, "Repository");
-  if (typeof target.contractPath === "string" && !target.contractPath.includes("..")) {
-    addLink(`${REPO_BASE}/blob/main/${target.contractPath}`, "Contract JSON");
+  if (
+    typeof target.contractPath === "string" &&
+    /^[A-Za-z0-9._/-]+$/.test(target.contractPath) &&
+    !target.contractPath.startsWith("/") &&
+    !target.contractPath.includes("..")
+  ) {
+    addLink(`${REPO_BASE}/blob/main/${encodeURI(target.contractPath)}`, "Contract JSON");
   }
   metaBar.appendChild(links);
 

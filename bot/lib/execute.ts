@@ -322,14 +322,14 @@ class BoundedStreamCapture {
     let remainder = chunk;
     if (this.headBytes < this.headLimit) {
       const take = Math.min(this.headLimit - this.headBytes, remainder.length);
-      this.headChunks.push(remainder.subarray(0, take));
+      this.headChunks.push(Buffer.from(remainder.subarray(0, take)));
       this.headBytes += take;
       remainder = remainder.subarray(take);
     }
 
     if (remainder.length === 0) return;
 
-    this.tailChunks.push(remainder);
+    this.tailChunks.push(Buffer.from(remainder));
     this.tailBytes += remainder.length;
 
     if (this.tailBytes > this.tailLimit) {
@@ -342,7 +342,7 @@ class BoundedStreamCapture {
           this.tailBytes -= first.length;
           overflow -= first.length;
         } else {
-          this.tailChunks[0] = first.subarray(overflow);
+          this.tailChunks[0] = Buffer.from(first.subarray(overflow));
           this.tailBytes -= overflow;
           overflow = 0;
         }

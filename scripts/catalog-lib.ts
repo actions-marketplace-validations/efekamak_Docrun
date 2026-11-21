@@ -458,6 +458,13 @@ export async function runCatalog(options: RunCatalogOptions): Promise<StatusDocu
   }
 
   const validatedContracts = validation.contracts;
+  if (options.targetIds?.length) {
+    const knownIds = new Set(validation.catalog.targets.map((t) => t.id));
+    const unknownIds = options.targetIds.filter((id) => !knownIds.has(id));
+    if (unknownIds.length > 0) {
+      throw new Error(`Unknown catalog target id(s): ${unknownIds.join(", ")}`);
+    }
+  }
   const allTargets = options.targetIds?.length
     ? validation.catalog.targets.filter((t) => options.targetIds!.includes(t.id))
     : validation.catalog.targets;
@@ -520,13 +527,43 @@ export async function runCatalog(options: RunCatalogOptions): Promise<StatusDocu
   };
 }
 
+export const StatusDocumentSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    generatedAt: z.string().min(1),
+    sourceCommit: z.string().nullable(),
+    summary: z.object({
+      total: z.number().int().nonnegative(),
+      passed: z.number().int().nonnegative(),
+      failed: z.number().int().nonnegative(),
+      infraErrors: z.number().int().nonnegative(),
+      notRun: z.number().int().nonnegative(),
+    }),
+    targets: z.array(
+      z.object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+        package: z.string().min(1),
+        status: z.enum(["passed", "failed", "infra_error", "not_run"]),
+        docsUrl: HttpsUrlSchema,
+        repositoryUrl: HttpsUrlSchema,
+      }).passthrough(),
+    ),
+  })
+  .passthrough();
+
 export async function buildStatusSite(options: {
   siteSrcDir: string;
   statusJsonPath: string;
   outDir: string;
 }): Promise<void> {
   const statusText = await fs.readFile(options.statusJsonPath, "utf8");
-  JSON.parse(statusText); // Fail fast if status.json is malformed.
+  const parsed = StatusDocumentSchema.safeParse(JSON.parse(statusText));
+  if (!parsed.success) {
+    throw new Error(
+      `Invalid status.json schema: ${parsed.error.issues.map((i) => `${i.path.join(".") || "root"}: ${i.message}`).join("; ")}`,
+    );
+  }
 
   await fs.rm(options.outDir, { recursive: true, force: true });
   await fs.mkdir(options.outDir, { recursive: true });
