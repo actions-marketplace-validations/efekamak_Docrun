@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "name": "cursor-agent-sdk",
+  "files": {
+    "package.json": "{\n  \"name\": \"cursor-sdk-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "agent/bot/agent.ts": "import { defineAgent } from \"@grok/agent-sdk\";\n\nexport default defineAgent({});\n",
+    "agent/bot/instructions.md": "# Smoke Agent\n\nAnswer concisely.\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "@grok/agent-sdk@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "@grok/agent-sdk", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "validate-agent",
+      "command": "npm",
+      "args": ["exec", "--", "agent-sdk", "validate", "--dir", "./agent"],
+      "timeoutMs": 60000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["ok:"]
+      }
+    }
+  ]
+}

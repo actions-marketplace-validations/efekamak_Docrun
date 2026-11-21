@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "mcp-sdk",
+  "files": {
+    "package.json": "{\n  \"name\": \"mcp-sdk-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n\nconst server = new McpServer({ name: \"docrun-check\", version: \"0.1.0\" });\nserver.registerTool(\n  \"ping\",\n  { description: \"Return pong\" },\n  async () => ({ content: [{ type: \"text\", text: \"pong\" }] })\n);\nconsole.log(\"mcp-sdk-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "@modelcontextprotocol/sdk@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "@modelcontextprotocol/sdk", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-server",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["mcp-sdk-ready"]
+      }
+    }
+  ]
+}

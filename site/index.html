@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>docrun — quickstart verification bench</title>
+    <meta
+      name="description"
+      content="docrun checks whether declared Node/npm quickstart contracts still work from a fresh temporary workspace."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="masthead">
+        <div class="masthead-top">
+          <div class="brand">
+            <a class="brand-name" href="https://github.com/efekamak/Docrun" rel="noopener noreferrer">
+              docrun
+            </a>
+            <span class="brand-sep" aria-hidden="true">/</span>
+            <span class="brand-sub">quickstart checks</span>
+          </div>
+          <div class="run-meta">
+            <span class="meta-item">
+              <span class="meta-label">Last run</span>
+              <time id="last-run" class="mono" datetime="">—</time>
+            </span>
+            <span class="meta-item" id="commit-wrap" hidden>
+              <span class="meta-label">Commit</span>
+              <a id="commit-link" class="mono link" href="#" rel="noopener noreferrer">—</a>
+            </span>
+          </div>
+        </div>
+
+        <p class="thesis">
+          Declared install paths, tested from a fresh temporary workspace. Each row records only
+          what its contract executed—never full SDK health.
+        </p>
+
+        <section class="summary-strip" aria-label="Run summary">
+          <div class="summary-stat stat-pass">
+            <span id="count-pass" class="stat-value mono">—</span>
+            <span class="stat-label">PASS</span>
+          </div>
+          <div class="summary-stat stat-fail">
+            <span id="count-fail" class="stat-value mono">—</span>
+            <span class="stat-label">FAIL</span>
+          </div>
+          <div class="summary-stat stat-infra">
+            <span id="count-infra" class="stat-value mono">—</span>
+            <span class="stat-label">INFRA ERROR</span>
+          </div>
+          <div class="summary-stat stat-not-run">
+            <span id="count-not-run" class="stat-value mono">—</span>
+            <span class="stat-label">NOT RUN</span>
+          </div>
+        </section>
+      </header>
+
+      <main id="main-content">
+        <div id="state-banner" class="state-banner" role="status" aria-live="polite">
+          Loading latest verification run…
+        </div>
+
+        <section id="targets-list" class="targets-list" aria-label="Checked quickstart contracts" hidden></section>
+      </main>
+
+      <footer class="footnote">
+        <p>
+          <strong>Scope boundary:</strong> Runs execute declared <code>node</code> and
+          <code>npm</code> steps with <code>shell: false</code> in a fresh temporary workspace on
+          an ephemeral runner with no repository secrets. Output is bounded and redacted.
+        </p>
+        <p class="footnote-links">
+          <a class="link" href="https://github.com/efekamak/Docrun" rel="noopener noreferrer">Source on GitHub</a>
+          <span aria-hidden="true">·</span>
+          <a class="link" href="./status.json">Raw status.json</a>
+        </p>
+      </footer>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

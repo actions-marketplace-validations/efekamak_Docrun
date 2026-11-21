@@ -23,6 +23,7 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run validate
+      - run: npm run catalog:validate
       - name: Direct tool smoke test (passing fixture)
         run: npx --yes "@grok/agent-sdk@0.7.2" tool call run_quickstart --dir . --input '{"contractPath":"fixtures/passing/docrun.json"}'
       - name: List evals

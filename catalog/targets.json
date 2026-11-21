@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "id": "cursor-agent-sdk",
+      "name": "Cursor Agent SDK",
+      "package": "@grok/agent-sdk",
+      "docsUrl": "https://cursor.com/docs/agent-sdk",
+      "repositoryUrl": "https://github.com/cursor/cursor",
+      "contractPath": "catalog/contracts/cursor-agent-sdk/docrun.json",
+      "scope": "install + validate a minimal local agent"
+    },
+    {
+      "id": "anthropic-sdk",
+      "name": "Anthropic TypeScript SDK",
+      "package": "@anthropic-ai/sdk",
+      "docsUrl": "https://docs.anthropic.com/en/api/client-sdks",
+      "repositoryUrl": "https://github.com/anthropics/anthropic-sdk-typescript",
+      "contractPath": "catalog/contracts/anthropic-sdk/docrun.json",
+      "scope": "install + import + client instantiation"
+    },
+    {
+      "id": "openai-sdk",
+      "name": "OpenAI JavaScript SDK",
+      "package": "openai",
+      "docsUrl": "https://platform.openai.com/docs/quickstart",
+      "repositoryUrl": "https://github.com/openai/openai-node",
+      "contractPath": "catalog/contracts/openai-sdk/docrun.json",
+      "scope": "install + import + client instantiation"
+    },
+    {
+      "id": "mcp-sdk",
+      "name": "MCP TypeScript SDK",
+      "package": "@modelcontextprotocol/sdk",
+      "docsUrl": "https://modelcontextprotocol.io/docs/develop/build-server",
+      "repositoryUrl": "https://github.com/modelcontextprotocol/typescript-sdk",
+      "contractPath": "catalog/contracts/mcp-sdk/docrun.json",
+      "scope": "install + import + McpServer registration"
+    },
+    {
+      "id": "vercel-ai-sdk",
+      "name": "Vercel AI SDK",
+      "package": "ai",
+      "docsUrl": "https://ai-sdk.dev/docs/getting-started",
+      "repositoryUrl": "https://github.com/vercel/ai",
+      "contractPath": "catalog/contracts/vercel-ai-sdk/docrun.json",
+      "scope": "install + import + core API exports"
+    }
+  ]
+}

@@ -9,6 +9,9 @@
     "check": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "validate": "agent-sdk validate --dir .",
+    "catalog:validate": "node --import tsx scripts/validate-catalog.ts",
+    "catalog:run": "node --import tsx scripts/run-catalog.ts",
+    "site:build": "node --import tsx scripts/build-status-site.ts",
     "dev": "agent-sdk dev"
   },
   "dependencies": {

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "vercel-ai-sdk",
+  "files": {
+    "package.json": "{\n  \"name\": \"vercel-ai-sdk-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { generateText, streamText, jsonSchema } from \"ai\";\n\nconst schema = jsonSchema({\n  type: \"object\",\n  properties: { topic: { type: \"string\" } }\n});\nif (typeof generateText !== \"function\" || typeof streamText !== \"function\" || !schema) {\n  throw new Error(\"Expected core exports from ai package\");\n}\nconsole.log(\"vercel-ai-sdk-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "ai@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "ai", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-exports",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["vercel-ai-sdk-ready"]
+      }
+    }
+  ]
+}

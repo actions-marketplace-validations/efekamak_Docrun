@@ -128,7 +128,7 @@ export function boundOutput(
   };
 }
 
-export function buildMinimalEnv(): NodeJS.ProcessEnv {
+export function buildMinimalEnv(workspaceDir?: string): NodeJS.ProcessEnv {
   const allowKeys = [
     "PATH",
     "Path",
@@ -163,6 +163,9 @@ export function buildMinimalEnv(): NodeJS.ProcessEnv {
   env.npm_config_update_notifier = "false";
   env.npm_config_fund = "false";
   env.npm_config_audit = "false";
+  if (workspaceDir) {
+    env.npm_config_cache = path.join(workspaceDir, ".npm-cache");
+  }
   return env;
 }
 
@@ -282,7 +285,7 @@ async function spawnStepProcess(
 
     const child = spawn(execPath, execArgs, {
       cwd,
-      env: buildMinimalEnv(),
+      env: buildMinimalEnv(cwd),
       shell: false,
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],

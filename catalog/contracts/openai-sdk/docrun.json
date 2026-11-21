@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "openai-sdk",
+  "files": {
+    "package.json": "{\n  \"name\": \"openai-sdk-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import OpenAI from \"openai\";\n\nconst client = new OpenAI({ apiKey: \"placeholder-local-check\" });\nif (typeof client.responses?.create !== \"function\") {\n  throw new Error(\"Expected client.responses.create to be a function\");\n}\nconsole.log(\"openai-sdk-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "openai@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "openai", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-client",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["openai-sdk-ready"]
+      }
+    }
+  ]
+}
