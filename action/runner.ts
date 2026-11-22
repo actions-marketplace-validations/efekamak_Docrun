@@ -117,6 +117,9 @@ export async function executeDocrunAction(
     rawResult = await runQuickstartContract(loaded.contract, {
       preserveWorkspace: false,
       readmeBaseDir: config.workingDir,
+      // Honor the Node.js the workflow selected (for example via actions/setup-node)
+      // instead of the runtime GitHub uses to host this action.
+      toolchain: "path",
     });
   } else {
     rawResult = buildInvalidContractResult(config.contractPath, loaded.errors);

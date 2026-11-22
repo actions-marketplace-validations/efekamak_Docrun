@@ -1,6 +1,5 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import { isRealPathContained, resolveContainedPath } from "../bot/lib/contract.js";
 import type { AssertionResult, QuickstartRunResult, StepResult } from "../bot/lib/execute.js";
 import {

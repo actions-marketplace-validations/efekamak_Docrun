@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "action-node22-toolchain",
+  "steps": [
+    {
+      "id": "node-on-path",
+      "command": "node",
+      "args": ["--version"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["v22."]
+      }
+    },
+    {
+      "id": "npm-on-same-node",
+      "command": "npm",
+      "args": ["version", "--json"],
+      "timeoutMs": 60000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["\"node\": \"22."]
+      }
+    }
+  ]
+}

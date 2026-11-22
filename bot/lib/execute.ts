@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import * as crypto from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -74,6 +75,7 @@ export type RunOptions = {
   maxRunTimeoutMs?: number;
   maxStreamBytes?: number;
   readmeBaseDir?: string;
+  toolchain?: ToolchainMode;
 };
 
 // eslint-disable-next-line no-control-regex
@@ -209,20 +211,42 @@ async function fileExists(targetPath: string): Promise<boolean> {
   }
 }
 
-async function findNpmCliOnPath(): Promise<string | null> {
-  const pathEnv = process.env.PATH ?? process.env.Path ?? "";
-  if (pathEnv.length === 0) {
-    return null;
-  }
+/**
+ * "host": run steps with the Node.js binary executing docrun itself (default).
+ * "path": run steps with the `node` found on PATH and the npm bundled with it,
+ * so a caller-selected toolchain (for example actions/setup-node) is honored
+ * even when docrun is hosted by a different Node.js runtime.
+ */
+export type ToolchainMode = "host" | "path";
 
+export type Toolchain = {
+  nodePath: string;
+  nodeVersion: string;
+  npmCliPath: string | null;
+};
+
+const NODE_VERSION_REGEX = /^v\d+\.\d+\.\d+[0-9A-Za-z.+-]{0,32}$/;
+const NODE_VERSION_PROBE_TIMEOUT_MS = 10_000;
+
+// Relative PATH entries are skipped so a checked-out repository can never
+// supply the node or npm that docrun executes.
+function absolutePathDirs(): string[] {
+  const pathEnv = process.env.PATH ?? process.env.Path ?? "";
+  const dirs: string[] = [];
   const seen = new Set<string>();
   for (const rawDir of pathEnv.split(path.delimiter)) {
     const dir = rawDir.trim().replace(/^"(.*)"$/, "$1");
-    if (dir.length === 0 || seen.has(dir)) {
+    if (dir.length === 0 || seen.has(dir) || !path.isAbsolute(dir)) {
       continue;
     }
     seen.add(dir);
+    dirs.push(dir);
+  }
+  return dirs;
+}
 
+async function findNpmCliOnPath(): Promise<string | null> {
+  for (const dir of absolutePathDirs()) {
     const candidates = [
       path.join(dir, "node_modules", "npm", "bin", "npm-cli.js"),
       path.resolve(dir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
@@ -251,36 +275,142 @@ async function findNpmCliOnPath(): Promise<string | null> {
   return null;
 }
 
-export async function resolveExecutable(
-  command: AllowedCommand,
-  args: string[],
-): Promise<{ execPath: string; execArgs: string[] }> {
-  if (command === "node") {
-    return { execPath: process.execPath, execArgs: args };
+async function findNodeOnPath(): Promise<string | null> {
+  const fileName = process.platform === "win32" ? "node.exe" : "node";
+  for (const dir of absolutePathDirs()) {
+    const candidate = path.join(dir, fileName);
+    try {
+      const stat = await fs.stat(candidate);
+      if (!stat.isFile()) {
+        continue;
+      }
+      if (process.platform !== "win32") {
+        await fs.access(candidate, fsConstants.X_OK);
+      }
+      return candidate;
+    } catch {
+      // Not present or not executable in this PATH entry.
+    }
   }
+  return null;
+}
 
-  const envNpmExecPath = process.env.npm_execpath;
-  if (envNpmExecPath && envNpmExecPath.endsWith("npm-cli.js") && (await fileExists(envNpmExecPath))) {
-    return { execPath: process.execPath, execArgs: [envNpmExecPath, ...args] };
-  }
+async function probeNodeVersion(nodePath: string): Promise<string | null> {
+  return new Promise<string | null>((resolve) => {
+    let settled = false;
+    let stdout = "";
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (version: string | null) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(version);
+    };
 
-  const nodeDir = path.dirname(process.execPath);
-  const candidates = [
-    path.join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
-    path.resolve(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
-  ];
+    let child;
+    try {
+      child = spawn(nodePath, ["--version"], {
+        env: buildMinimalEnv(),
+        shell: false,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch {
+      finish(null);
+      return;
+    }
 
-  for (const candidate of candidates) {
-    if (await fileExists(candidate)) {
-      return { execPath: process.execPath, execArgs: [candidate, ...args] };
+    timer = setTimeout(() => {
+      killProcessTree(child.pid);
+      finish(null);
+    }, NODE_VERSION_PROBE_TIMEOUT_MS);
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      if (stdout.length < 128) {
+        stdout += chunk.toString("utf8");
+      }
+    });
+    child.on("error", () => finish(null));
+    child.on("close", (code) => {
+      const version = stdout.trim();
+      finish(code === 0 && NODE_VERSION_REGEX.test(version) ? version : null);
+    });
+  });
+}
+
+async function findNpmCliForNode(
+  nodePath: string,
+  useHostNpmExecPath: boolean,
+): Promise<string | null> {
+  if (useHostNpmExecPath) {
+    const envNpmExecPath = process.env.npm_execpath;
+    if (
+      envNpmExecPath &&
+      envNpmExecPath.endsWith("npm-cli.js") &&
+      (await fileExists(envNpmExecPath))
+    ) {
+      return envNpmExecPath;
     }
   }
 
-  const pathNpmCli = await findNpmCliOnPath();
-  if (pathNpmCli) {
-    return { execPath: process.execPath, execArgs: [pathNpmCli, ...args] };
+  const nodeDirs = [path.dirname(nodePath)];
+  try {
+    const realNodeDir = path.dirname(await fs.realpath(nodePath));
+    if (!nodeDirs.includes(realNodeDir)) {
+      nodeDirs.push(realNodeDir);
+    }
+  } catch {
+    // Fall back to the unresolved directory only.
   }
 
+  for (const nodeDir of nodeDirs) {
+    const candidates = [
+      path.join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
+      path.resolve(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    ];
+    for (const candidate of candidates) {
+      if (await fileExists(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return findNpmCliOnPath();
+}
+
+export async function resolveToolchain(mode: ToolchainMode = "host"): Promise<Toolchain> {
+  if (mode === "path") {
+    const nodeOnPath = await findNodeOnPath();
+    if (nodeOnPath) {
+      const nodeVersion = await probeNodeVersion(nodeOnPath);
+      if (nodeVersion) {
+        return {
+          nodePath: nodeOnPath,
+          nodeVersion,
+          npmCliPath: await findNpmCliForNode(nodeOnPath, false),
+        };
+      }
+    }
+  }
+
+  return {
+    nodePath: process.execPath,
+    nodeVersion: process.version,
+    npmCliPath: await findNpmCliForNode(process.execPath, true),
+  };
+}
+
+export async function resolveExecutable(
+  command: AllowedCommand,
+  args: string[],
+  toolchain?: Toolchain,
+): Promise<{ execPath: string; execArgs: string[] }> {
+  const resolved = toolchain ?? (await resolveToolchain("host"));
+  if (command === "node") {
+    return { execPath: resolved.nodePath, execArgs: args };
+  }
+  if (resolved.npmCliPath) {
+    return { execPath: resolved.nodePath, execArgs: [resolved.npmCliPath, ...args] };
+  }
   return { execPath: "npm", execArgs: args };
 }
 
@@ -415,9 +545,10 @@ async function spawnStepProcess(
   cwd: string,
   timeoutMs: number,
   maxStreamBytes: number,
+  toolchain: Toolchain,
 ): Promise<RawSpawnResult> {
   const started = Date.now();
-  const { execPath, execArgs } = await resolveExecutable(step.command, step.args);
+  const { execPath, execArgs } = await resolveExecutable(step.command, step.args, toolchain);
   const captureCap = maxStreamBytes * 4;
 
   return new Promise<RawSpawnResult>((resolve) => {
@@ -642,6 +773,7 @@ export async function runQuickstartContract(
     }
   }
 
+  const toolchain = await resolveToolchain(options.toolchain ?? "host");
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-"));
   const stepResults: StepResult[] = [];
   let overallStatus: "passed" | "failed" = "passed";
@@ -684,7 +816,13 @@ export async function runQuickstartContract(
       }
 
       const effectiveTimeoutMs = Math.min(step.timeoutMs, remainingRunMs);
-      const raw = await spawnStepProcess(step, workspaceDir, effectiveTimeoutMs, maxStreamBytes);
+      const raw = await spawnStepProcess(
+        step,
+        workspaceDir,
+        effectiveTimeoutMs,
+        maxStreamBytes,
+        toolchain,
+      );
       const boundedStdout = boundOutput(raw.stdout, maxStreamBytes);
       const boundedStderr = boundOutput(
         raw.spawnError ? `${raw.stderr}\n${raw.spawnError}`.trim() : raw.stderr,
@@ -780,7 +918,7 @@ export async function runQuickstartContract(
     startedAt,
     durationMs: Date.now() - startedMs,
     platform: process.platform,
-    nodeVersion: process.version,
+    nodeVersion: toolchain.nodeVersion,
     workspacePreserved: preserveWorkspace,
     preservedWorkspaceDir: preserveWorkspace ? workspaceDir : null,
     cleanup,

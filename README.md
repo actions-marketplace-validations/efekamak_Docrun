@@ -29,12 +29,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: efekamak/Docrun@v0.3.2
+      - uses: efekamak/Docrun@v0.3.3
         with:
           contract: docrun.json
 ```
 
-Pin to an exact release tag (`@v0.3.2`) or a full commit SHA for stricter supply-chain control. Do not pin to `@main`.
+Pin to an exact release tag (`@v0.3.3`) or a full commit SHA for stricter supply-chain control. Do not pin to `@main`.
 
 ### Action inputs
 
@@ -53,6 +53,8 @@ Pin to an exact release tag (`@v0.3.2`) or a full commit SHA for stricter supply
 | `fingerprint` | Stable failure fingerprint; empty when passed. |
 | `duration-ms` | Total run duration in milliseconds. |
 | `result-path` | Path under `RUNNER_TEMP` to the sanitized JSON run result. |
+
+Contract steps run with the `node` on the runner `PATH` and the npm that ships with it, the same toolchain a `run:` step would get. Add `actions/setup-node` before this action to pick a specific Node.js version; without it, the runner image's preinstalled Node.js is used.
 
 On `failed` or `invalid` runs, the action writes the sanitized JSON result file, sets all outputs, and posts a bounded HTML summary to the GitHub Step Summary before failing the step. Downstream steps with `if: always()` can still read the outputs and `result-path`.
 

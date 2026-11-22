@@ -14,6 +14,7 @@ import {
   boundOutput,
   computeFailureFingerprint,
   redactSecrets,
+  resolveToolchain,
   runQuickstartContract,
 } from "../bot/lib/execute.js";
 
@@ -323,5 +324,107 @@ describe("deterministic runner", () => {
 
     assert.equal(checkReadmeDrift(matchingReadme, contract).ok, true);
     assert.equal(checkReadmeDrift(driftedReadme, contract).ok, false);
+  });
+});
+
+describe("toolchain resolution", () => {
+  const NODE_FILE = process.platform === "win32" ? "node.exe" : "node";
+
+  async function withPath<T>(value: string, fn: () => Promise<T>): Promise<T> {
+    const saved = { PATH: process.env.PATH, Path: process.env.Path };
+    try {
+      delete process.env.Path;
+      process.env.PATH = value;
+      return await fn();
+    } finally {
+      delete process.env.PATH;
+      delete process.env.Path;
+      if (saved.Path !== undefined) process.env.Path = saved.Path;
+      if (saved.PATH !== undefined) process.env.PATH = saved.PATH;
+    }
+  }
+
+  async function samePath(a: string, b: string): Promise<boolean> {
+    const [ra, rb] = await Promise.all([fs.realpath(a), fs.realpath(b)]);
+    return process.platform === "win32" ? ra.toLowerCase() === rb.toLowerCase() : ra === rb;
+  }
+
+  it("host mode uses the Node.js running docrun", async () => {
+    const toolchain = await resolveToolchain("host");
+    assert.equal(toolchain.nodePath, process.execPath);
+    assert.equal(toolchain.nodeVersion, process.version);
+  });
+
+  it("path mode uses the node found on PATH and reports its version", async () => {
+    const nodeDir = path.dirname(process.execPath);
+    const toolchain = await withPath(nodeDir, () => resolveToolchain("path"));
+    assert.equal(toolchain.nodePath, path.join(nodeDir, NODE_FILE));
+    assert.equal(toolchain.nodeVersion, process.version);
+  });
+
+  it("path mode falls back to the host when PATH has no node", async () => {
+    const emptyDir = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-toolchain-"));
+    try {
+      const toolchain = await withPath(emptyDir, () => resolveToolchain("path"));
+      assert.equal(toolchain.nodePath, process.execPath);
+      assert.equal(toolchain.nodeVersion, process.version);
+    } finally {
+      await fs.rm(emptyDir, { recursive: true, force: true });
+    }
+  });
+
+  it("path mode falls back to the host when the PATH node is unusable", async () => {
+    const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-toolchain-"));
+    try {
+      const fakeNode = path.join(fakeDir, NODE_FILE);
+      await fs.writeFile(fakeNode, "#!/bin/sh\necho not-a-version\n", { mode: 0o755 });
+      const toolchain = await withPath(fakeDir, () => resolveToolchain("path"));
+      assert.equal(toolchain.nodePath, process.execPath);
+      assert.equal(toolchain.nodeVersion, process.version);
+    } finally {
+      await fs.rm(fakeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("path mode ignores relative PATH entries", async () => {
+    const localDir = await fs.mkdtemp(path.join(process.cwd(), ".tmp-toolchain-"));
+    try {
+      await fs.copyFile(process.execPath, path.join(localDir, NODE_FILE));
+      await fs.chmod(path.join(localDir, NODE_FILE), 0o755);
+      const relative = path.relative(process.cwd(), localDir);
+      assert.equal(path.isAbsolute(relative), false);
+
+      const toolchain = await withPath(relative, () => resolveToolchain("path"));
+      assert.equal(await samePath(toolchain.nodePath, process.execPath), true);
+    } finally {
+      await fs.rm(localDir, { recursive: true, force: true });
+    }
+  });
+
+  it("runs steps with the selected toolchain and reports its version", async () => {
+    const contract: QuickstartContract = {
+      schemaVersion: 1,
+      name: "toolchain-check",
+      files: {},
+      steps: [
+        {
+          id: "node-version",
+          command: "node",
+          args: ["--version"],
+          timeoutMs: 20_000,
+          expect: { exitCode: 0, stdoutIncludes: [process.version] },
+        },
+        {
+          id: "npm-version",
+          command: "npm",
+          args: ["--version"],
+          timeoutMs: 60_000,
+          expect: { exitCode: 0 },
+        },
+      ],
+    };
+    const result = await runQuickstartContract(contract, { toolchain: "path" });
+    assert.equal(result.status, "passed");
+    assert.equal(result.nodeVersion, process.version);
   });
 });
