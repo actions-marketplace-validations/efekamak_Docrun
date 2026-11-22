@@ -1,4 +1,4 @@
-name: "docrun"
+name: "Docrun Quickstart Check"
 description: "Run a declared docrun.json Node/npm quickstart contract in a fresh temporary workspace and report evidence."
 author: "efekamak"
 branding:
