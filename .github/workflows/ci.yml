@@ -120,6 +120,26 @@ jobs:
           test "$OUT_STATUS" = "passed"
           grep -q '"nodeVersion": "v22\.' "$OUT_RESULT_PATH"
 
+      - name: Select Python 3.12 for the Python action check
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Action integration (Python contract in isolated venv)
+        id: action_python
+        uses: ./
+        with:
+          contract: fixtures/action-python/docrun.json
+
+      - name: Assert Python action outputs
+        shell: bash
+        env:
+          OUT_STATUS: ${{ steps.action_python.outputs.status }}
+          OUT_RESULT_PATH: ${{ steps.action_python.outputs.result-path }}
+        run: |
+          test "$OUT_STATUS" = "passed"
+          grep -q '"pythonVersion": "3\.12\.' "$OUT_RESULT_PATH"
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"

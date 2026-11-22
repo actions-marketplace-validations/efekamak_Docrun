@@ -674,4 +674,37 @@ describe("action runner and bundled entrypoint end-to-end", () => {
       assert.ok(outputs["result-path"].length > 0);
     });
   });
+
+  it("runs Python fixture via committed bundle in an isolated venv and records pythonVersion", async () => {
+    await withTempDirs(async ({ runnerTemp }) => {
+      const outputFile = path.join(runnerTemp, "github-output-python.txt");
+      const summaryFile = path.join(runnerTemp, "github-summary-python.md");
+      await fs.writeFile(outputFile, "", "utf8");
+      await fs.writeFile(summaryFile, "", "utf8");
+
+      const runRes = await runBundledActionSubprocess({
+        GITHUB_WORKSPACE: path.resolve("."),
+        RUNNER_TEMP: runnerTemp,
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_STEP_SUMMARY: summaryFile,
+        INPUT_CONTRACT: "fixtures/action-python/docrun.json",
+        "INPUT_WORKING-DIRECTORY": ".",
+        GITHUB_TOKEN: "ghs_secret_must_not_reach_python_step",
+      });
+
+      assert.equal(runRes.code, 0, `Unexpected exit ${runRes.code}: ${runRes.stdout}\n${runRes.stderr}`);
+      const outputs = parseGithubOutputFile(await fs.readFile(outputFile, "utf8"));
+      assert.equal(outputs.status, "passed");
+      assert.equal(outputs["failure-category"], "");
+      assert.ok(outputs["result-path"].length > 0);
+
+      const saved = JSON.parse(await fs.readFile(outputs["result-path"], "utf8")) as {
+        pythonVersion?: string;
+      };
+      assert.match(saved.pythonVersion ?? "", /^\d+\.\d+\.\d+/);
+
+      const summary = await fs.readFile(summaryFile, "utf8");
+      assert.match(summary, /Python \d+\.\d+\.\d+/);
+    });
+  });
 });

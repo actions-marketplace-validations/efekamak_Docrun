@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "name": "action-python-smoke",
+  "files": {
+    "hello.py": "import os\nimport sys\n\nin_venv = sys.prefix != sys.base_prefix\nassert in_venv, f\"expected isolated venv: prefix={sys.prefix}\"\nassert os.environ.get(\"GITHUB_TOKEN\") is None, \"runner secret leaked\"\nprint(f\"python-ok {sys.version_info.major}.{sys.version_info.minor}\")\n"
+  },
+  "steps": [
+    {
+      "id": "python-version",
+      "command": "python",
+      "args": ["--version"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["Python 3."]
+      }
+    },
+    {
+      "id": "pip-version",
+      "command": "pip",
+      "args": ["--version"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["pip "]
+      }
+    },
+    {
+      "id": "run-hello",
+      "command": "python",
+      "args": ["hello.py"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["python-ok 3."]
+      }
+    }
+  ]
+}

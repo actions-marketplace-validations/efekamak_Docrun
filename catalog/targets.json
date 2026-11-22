@@ -144,6 +144,42 @@
       "repositoryUrl": "https://github.com/resend/resend-node",
       "contractPath": "catalog/contracts/resend/docrun.json",
       "scope": "install + import + local client construction"
+    },
+    {
+      "id": "claude-agent-sdk-python",
+      "name": "Claude Agent SDK (Python)",
+      "package": "claude-agent-sdk",
+      "docsUrl": "https://docs.claude.com/en/api/agent-sdk/python",
+      "repositoryUrl": "https://github.com/anthropics/claude-agent-sdk-python",
+      "contractPath": "catalog/contracts/claude-agent-sdk-python/docrun.json",
+      "scope": "pip install + import + ClaudeAgentOptions construction"
+    },
+    {
+      "id": "openai-agents-python",
+      "name": "OpenAI Agents SDK (Python)",
+      "package": "openai-agents",
+      "docsUrl": "https://openai.github.io/openai-agents-python/",
+      "repositoryUrl": "https://github.com/openai/openai-agents-python",
+      "contractPath": "catalog/contracts/openai-agents-python/docrun.json",
+      "scope": "pip install + import + Agent construction"
+    },
+    {
+      "id": "openai-python",
+      "name": "OpenAI Python SDK",
+      "package": "openai",
+      "docsUrl": "https://platform.openai.com/docs/quickstart",
+      "repositoryUrl": "https://github.com/openai/openai-python",
+      "contractPath": "catalog/contracts/openai-python/docrun.json",
+      "scope": "pip install + import + local client construction"
+    },
+    {
+      "id": "anthropic-python",
+      "name": "Anthropic Python SDK",
+      "package": "anthropic",
+      "docsUrl": "https://docs.anthropic.com/en/api/client-sdks",
+      "repositoryUrl": "https://github.com/anthropics/anthropic-sdk-python",
+      "contractPath": "catalog/contracts/anthropic-python/docrun.json",
+      "scope": "pip install + import + local client construction"
     }
   ]
 }

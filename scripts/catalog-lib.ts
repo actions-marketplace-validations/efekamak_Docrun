@@ -6,6 +6,7 @@ import {
   isSafeRelativePath,
   loadContractFile,
   resolveContainedPath,
+  type AllowedCommand,
   type FailureCategory,
   type QuickstartContract,
 } from "../bot/lib/contract.js";
@@ -33,6 +34,8 @@ import {
 export { CATALOG_LIMITS };
 
 export const ALLOWED_CATALOG_NPM_SUBCOMMANDS = ["install", "list", "exec"] as const;
+export const ALLOWED_CATALOG_PIP_SUBCOMMANDS = ["install", "list", "show"] as const;
+export const ALLOWED_CATALOG_UV_SUBCOMMANDS = ["pip", "venv", "run", "sync", "add", "--version"] as const;
 
 const SLUG_REGEX = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const NPM_PACKAGE_REGEX = /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
@@ -56,7 +59,7 @@ export const CatalogTargetSchema = z
     name: z.string().min(1).max(80),
     package: z
       .string()
-      .regex(NPM_PACKAGE_REGEX, "Package must be a valid npm package name."),
+      .regex(NPM_PACKAGE_REGEX, "Package must be a valid npm or PyPI package name."),
     docsUrl: HttpsUrlSchema,
     repositoryUrl: HttpsUrlSchema,
     contractPath: z.string().min(1).refine(isSafeRelativePath, {
@@ -94,7 +97,7 @@ export type TargetStatus = "passed" | "failed" | "infra_error" | "not_run";
 
 export type PublicStepEvidence = {
   id: string;
-  command: "node" | "npm";
+  command: AllowedCommand;
   args: string[];
   status: "passed" | "failed" | "timed_out" | "skipped";
   failureCategory: FailureCategory | null;
@@ -175,6 +178,28 @@ export function validateCatalogContractPolicy(
             `target "${targetId}" step "${step.id}": npm exec must declare an explicit executable name in args.`,
           );
         }
+      }
+    }
+    if (step.command === "pip") {
+      const subcommand = step.args[0];
+      if (
+        !subcommand ||
+        !(ALLOWED_CATALOG_PIP_SUBCOMMANDS as readonly string[]).includes(subcommand)
+      ) {
+        errors.push(
+          `target "${targetId}" step "${step.id}": pip subcommand "${subcommand ?? ""}" is not allowed in catalog contracts (allowed: ${ALLOWED_CATALOG_PIP_SUBCOMMANDS.join(", ")}).`,
+        );
+      }
+    }
+    if (step.command === "uv") {
+      const subcommand = step.args[0];
+      if (
+        !subcommand ||
+        !(ALLOWED_CATALOG_UV_SUBCOMMANDS as readonly string[]).includes(subcommand)
+      ) {
+        errors.push(
+          `target "${targetId}" step "${step.id}": uv subcommand "${subcommand ?? ""}" is not allowed in catalog contracts (allowed: ${ALLOWED_CATALOG_UV_SUBCOMMANDS.join(", ")}).`,
+        );
       }
     }
   }
@@ -258,6 +283,10 @@ export async function loadAndValidateCatalog(
   };
 }
 
+function normalizePythonPackageName(name: string): string {
+  return name.toLowerCase().replace(/[-_.]+/g, "-");
+}
+
 export function extractResolvedVersion(
   packageName: string,
   steps: Array<{ id: string; stdout: string }>,
@@ -268,11 +297,31 @@ export function extractResolvedVersion(
   }
 
   try {
-    const parsed = JSON.parse(versionStep.stdout) as {
-      dependencies?: Record<string, { version?: unknown }>;
-    };
-    const ver = parsed?.dependencies?.[packageName]?.version;
-    return typeof ver === "string" && ver.length > 0 ? ver : null;
+    const parsed: unknown = JSON.parse(versionStep.stdout);
+    if (Array.isArray(parsed)) {
+      const targetNorm = normalizePythonPackageName(packageName);
+      for (const entry of parsed) {
+        if (
+          entry &&
+          typeof entry === "object" &&
+          typeof (entry as { name?: unknown }).name === "string" &&
+          typeof (entry as { version?: unknown }).version === "string"
+        ) {
+          const item = entry as { name: string; version: string };
+          if (normalizePythonPackageName(item.name) === targetNorm && item.version.length > 0) {
+            return item.version;
+          }
+        }
+      }
+      return null;
+    }
+
+    if (parsed && typeof parsed === "object") {
+      const deps = (parsed as { dependencies?: Record<string, { version?: unknown }> }).dependencies;
+      const ver = deps?.[packageName]?.version;
+      return typeof ver === "string" && ver.length > 0 ? ver : null;
+    }
+    return null;
   } catch {
     return null;
   }

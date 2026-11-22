@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "claude-agent-sdk-python",
+  "files": {
+    "example.py": "import claude_agent_sdk\nfrom claude_agent_sdk import ClaudeAgentOptions, query\n\nassert callable(query)\nopts = ClaudeAgentOptions()\nassert opts is not None\nprint(\"claude-agent-sdk-python-ready\")\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "pip",
+      "args": ["install", "--no-input", "claude-agent-sdk"],
+      "timeoutMs": 240000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "pip",
+      "args": ["list", "--format=json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-sdk",
+      "command": "python",
+      "args": ["example.py"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["claude-agent-sdk-python-ready"]
+      }
+    }
+  ]
+}

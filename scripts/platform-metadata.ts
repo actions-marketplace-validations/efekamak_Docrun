@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import * as os from "node:os";
-import { buildMinimalEnv, resolveExecutable } from "../bot/lib/execute.js";
+import { buildMinimalEnv, findPythonOnPath, resolveExecutable } from "../bot/lib/execute.js";
 import { sanitizePublicExcerpt } from "./catalog-lib.js";
 import {
   PlatformEnvironmentSchema,
@@ -101,12 +101,17 @@ export async function collectPlatformEnvironment(
   options?: {
     hostPlatform?: NodeJS.Platform;
     npmVersion?: string;
+    pythonVersion?: string | null;
     runnerImage?: string | null;
   },
 ): Promise<PlatformEnvironment> {
   assertPlatformMatchesHost(platform, options?.hostPlatform ?? process.platform);
 
   const npmVersion = options?.npmVersion ?? (await readNpmVersion());
+  const detectedPython =
+    options?.pythonVersion !== undefined
+      ? options.pythonVersion
+      : (await findPythonOnPath())?.version ?? null;
   const rawRunnerImage =
     options?.runnerImage !== undefined
       ? options.runnerImage
@@ -120,6 +125,7 @@ export async function collectPlatformEnvironment(
     arch: cleanMetadataValue(process.arch, 32, "unknown"),
     nodeVersion: cleanMetadataValue(process.version, 32, "unknown"),
     npmVersion: cleanMetadataValue(npmVersion, 32, "unknown"),
+    ...(detectedPython ? { pythonVersion: cleanMetadataValue(detectedPython, 32, "unknown") } : {}),
     runnerImage,
   };
 

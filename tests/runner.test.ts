@@ -428,3 +428,108 @@ describe("toolchain resolution", () => {
     assert.equal(result.nodeVersion, process.version);
   });
 });
+
+describe("python runtime support", () => {
+  it("allows python, pip, and uv commands while rejecting disallowed commands", () => {
+    for (const command of ["python", "pip", "uv"] as const) {
+      const ok = validateContract({
+        schemaVersion: 1,
+        name: `valid-${command}`,
+        steps: [
+          {
+            id: "check",
+            command,
+            args: ["--version"],
+            timeoutMs: 10_000,
+            expect: { exitCode: 0 },
+          },
+        ],
+      });
+      assert.equal(ok.ok, true, `Expected ${command} to be allowed`);
+    }
+
+    const bad = validateContract({
+      schemaVersion: 1,
+      name: "invalid-python3",
+      steps: [
+        {
+          id: "check",
+          command: "python3",
+          args: ["--version"],
+          timeoutMs: 10_000,
+          expect: { exitCode: 0 },
+        },
+      ],
+    });
+    assert.equal(bad.ok, false);
+  });
+
+  it("runs python and pip inside an isolated workspace venv and reports pythonVersion", async () => {
+    const loaded = await loadContractFile(REPO_ROOT, "fixtures/action-python/docrun.json");
+    assert.equal(loaded.ok, true);
+    if (!loaded.ok) return;
+
+    const result = await runQuickstartContract(loaded.contract, { toolchain: "path" });
+    assert.equal(result.status, "passed");
+    assert.match(result.pythonVersion ?? "", /^\d+\.\d+\.\d+/);
+    assert.equal(result.steps.length, 3);
+    assert.ok(result.steps.every((s) => s.status === "passed"));
+  });
+
+  it("classifies failing pip install as install_failed", async () => {
+    const contract: QuickstartContract = {
+      schemaVersion: 1,
+      name: "pip-install-fail",
+      files: {},
+      steps: [
+        {
+          id: "install",
+          command: "pip",
+          args: ["install", "--no-index", "--find-links", "missing-wheelhouse", "nonexistent-pkg"],
+          timeoutMs: 30_000,
+          expect: { exitCode: 0 },
+        },
+      ],
+    };
+
+    const result = await runQuickstartContract(contract, { toolchain: "path" });
+    assert.equal(result.status, "failed");
+    assert.equal(result.failureCategory, "install_failed");
+    assert.equal(result.firstFailedStepId, "install");
+  });
+
+  it("reports environment_failed cleanly when python is missing from PATH", async () => {
+    const emptyDir = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-nopy-"));
+    const saved = { PATH: process.env.PATH, Path: process.env.Path };
+    try {
+      delete process.env.Path;
+      process.env.PATH = emptyDir;
+
+      const contract: QuickstartContract = {
+        schemaVersion: 1,
+        name: "missing-python",
+        files: {},
+        steps: [
+          {
+            id: "check",
+            command: "python",
+            args: ["--version"],
+            timeoutMs: 10_000,
+            expect: { exitCode: 0 },
+          },
+        ],
+      };
+
+      const result = await runQuickstartContract(contract, { toolchain: "path" });
+      assert.equal(result.status, "failed");
+      assert.equal(result.failureCategory, "environment_failed");
+      assert.match(result.steps[0]?.stderr ?? "", /Python executable was not found on PATH/i);
+    } finally {
+      delete process.env.PATH;
+      delete process.env.Path;
+      if (saved.Path !== undefined) process.env.Path = saved.Path;
+      if (saved.PATH !== undefined) process.env.PATH = saved.PATH;
+      await fs.rm(emptyDir, { recursive: true, force: true });
+    }
+  });
+});

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "anthropic-python",
+  "files": {
+    "example.py": "from anthropic import Anthropic\n\nclient = Anthropic(api_key=\"docrun-local-test-key\")\nassert hasattr(client, \"messages\")\nprint(\"anthropic-python-ready\")\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "pip",
+      "args": ["install", "--no-input", "anthropic"],
+      "timeoutMs": 240000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "pip",
+      "args": ["list", "--format=json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-client",
+      "command": "python",
+      "args": ["example.py"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["anthropic-python-ready"]
+      }
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import * as z from "zod/v4";
-import { FAILURE_CATEGORIES, isSafeRelativePath } from "../bot/lib/contract.js";
+import { ALLOWED_COMMANDS, FAILURE_CATEGORIES, isSafeRelativePath } from "../bot/lib/contract.js";
 import { CATALOG_LIMITS } from "./catalog-limits.js";
 
 export const REQUIRED_PLATFORMS = ["ubuntu", "windows"] as const;
@@ -67,6 +67,7 @@ export const PlatformEnvironmentSchema = z
     arch: z.string().min(1).max(32),
     nodeVersion: z.string().min(1).max(32),
     npmVersion: z.string().min(1).max(32),
+    pythonVersion: z.string().min(1).max(32).optional(),
     runnerImage: z.string().min(1).max(64).nullable(),
   })
   .strict();
@@ -85,7 +86,7 @@ export const AssertionResultSchema = z
 export const PublicStepEvidenceSchema = z
   .object({
     id: z.string().regex(SLUG_REGEX),
-    command: z.enum(["node", "npm"]),
+    command: z.enum(ALLOWED_COMMANDS),
     args: z.array(z.string().max(512)).max(50),
     status: z.enum(["passed", "failed", "timed_out", "skipped"]),
     failureCategory: z.enum(FAILURE_CATEGORIES).nullable(),

@@ -206,11 +206,15 @@ function renderDocument(params: {
     ? `${result.contractName} (${contractPath})`
     : result.contractName;
 
+  const runnerValue = result.pythonVersion
+    ? `<code>${escapeHtml(result.platform)}</code> / <code>${escapeHtml(result.nodeVersion)}</code> / <code>Python ${escapeHtml(result.pythonVersion)}</code>`
+    : `<code>${escapeHtml(result.platform)}</code> / <code>${escapeHtml(result.nodeVersion)}</code>`;
+
   const metaRows: Array<[string, string]> = [
     ["Status", escapeHtml(result.status)],
     ["Contract", `<code>${safeEscapedText(contractLabel, 240, sanitizeOptions)}</code>`],
     ["Duration", `${Math.max(0, Math.round(result.durationMs))} ms`],
-    ["Runner", `<code>${escapeHtml(result.platform)}</code> / <code>${escapeHtml(result.nodeVersion)}</code>`],
+    ["Runner", runnerValue],
   ];
 
   if (result.failureCategory) {

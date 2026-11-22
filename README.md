@@ -29,12 +29,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: efekamak/Docrun@v0.3.3
+      - uses: efekamak/Docrun@v0.4.0
         with:
           contract: docrun.json
 ```
 
-Pin to an exact release tag (`@v0.3.3`) or a full commit SHA for stricter supply-chain control. Do not pin to `@main`.
+Pin to an exact release tag (`@v0.4.0`) or a full commit SHA for stricter supply-chain control. Do not pin to `@main`.
 
 ### Action inputs
 
@@ -54,11 +54,11 @@ Pin to an exact release tag (`@v0.3.3`) or a full commit SHA for stricter supply
 | `duration-ms` | Total run duration in milliseconds. |
 | `result-path` | Path under `RUNNER_TEMP` to the sanitized JSON run result. |
 
-Contract steps run with the `node` on the runner `PATH` and the npm that ships with it, the same toolchain a `run:` step would get. Add `actions/setup-node` before this action to pick a specific Node.js version; without it, the runner image's preinstalled Node.js is used.
+Contract steps support allowlisted `node`, `npm`, `python`, `pip`, and `uv` commands. Steps run with the binaries on the runner `PATH` (add `actions/setup-node` or `actions/setup-python` before this action to pick a specific version). Contracts that use `python` or `pip` automatically run inside an isolated temporary `.venv` created per run so packages never pollute the runner or hit PEP 668 externally-managed-environment errors.
 
 On `failed` or `invalid` runs, the action writes the sanitized JSON result file, sets all outputs, and posts a bounded HTML summary to the GitHub Step Summary before failing the step. Downstream steps with `if: always()` can still read the outputs and `result-path`.
 
-The action wrapper itself makes no network requests, strips runner secrets (`GITHUB_TOKEN`, OIDC, and API keys) from child processes, and runs only allowlisted `node`/`npm` commands with `shell: false`. Contracts that run `npm install` still talk to the npm registry and can run package lifecycle scripts as the GitHub runner user (not a security sandbox).
+The action wrapper itself makes no network requests, strips runner secrets (`GITHUB_TOKEN`, OIDC, and API keys) from child processes, and runs only allowlisted `node`/`npm`/`python`/`pip`/`uv` commands with `shell: false`. Contracts that run `npm install` or `pip install` still talk to package registries and can run package install/lifecycle scripts as the GitHub runner user (not a security sandbox).
 
 ## 1. What problem does this solve?
 
@@ -72,7 +72,7 @@ Unit tests often pass in a maintainer's repository while the published quickstar
 
 ## 2. Live quickstart catalog
 
-`catalog/targets.json` declares 16 real JS/TS SDK install paths tested daily on ephemeral Ubuntu and Windows GitHub-hosted runners (Node.js 24) with no repository secrets:
+`catalog/targets.json` declares 20 real JS/TS and Python SDK install paths tested daily on ephemeral Ubuntu and Windows GitHub-hosted runners (Node.js 24, Python 3.12) with no repository secrets:
 
 - **Cursor Agent SDK** (`@grok/agent-sdk`): install + scaffold a local agent + validate
 - **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`): install + import + `createSdkMcpServer` tool registration
@@ -90,6 +90,10 @@ Unit tests often pass in a maintainer's repository while the published quickstar
 - **Supabase JS** (`@supabase/supabase-js`): install + import + local client with background auth disabled
 - **Stripe Node SDK** (`stripe`): install + import + local client construction
 - **Resend Node SDK** (`resend`): install + import + local client construction
+- **Claude Agent SDK (Python)** (`claude-agent-sdk`): pip install + import + `ClaudeAgentOptions` construction
+- **OpenAI Agents SDK (Python)** (`openai-agents`): pip install + import + `Agent` construction
+- **OpenAI Python SDK** (`openai`): pip install + import + local client construction
+- **Anthropic Python SDK** (`anthropic`): pip install + import + local client construction
 
 Each row on the status page reports only what its declared contract ran on the recorded Ubuntu and Windows runners, not full SDK health, paid API calls, or uptime/SLA.
 

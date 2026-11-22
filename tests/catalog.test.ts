@@ -30,12 +30,12 @@ import {
 const REPO_ROOT = process.cwd();
 
 describe("catalog validation and security", () => {
-  it("validates the real repository catalog/targets.json and all 16 contracts", async () => {
+  it("validates the real repository catalog/targets.json and all 20 contracts", async () => {
     const outcome = await loadAndValidateCatalog(REPO_ROOT, "catalog/targets.json");
     assert.equal(outcome.ok, true);
     if (!outcome.ok) return;
-    assert.equal(outcome.catalog.targets.length, 16);
-    assert.equal(outcome.contracts.size, 16);
+    assert.equal(outcome.catalog.targets.length, 20);
+    assert.equal(outcome.contracts.size, 20);
   });
 
   it("rejects duplicate target IDs, repo-escaping paths, and non-HTTPS URLs", () => {
@@ -100,6 +100,17 @@ describe("catalog validation and security", () => {
       },
     ]);
     assert.equal(ver, "0.7.2");
+
+    const pipVer = extractResolvedVersion("claude-agent-sdk", [
+      {
+        id: "resolved-version",
+        stdout: JSON.stringify([
+          { name: "anyio", version: "4.10.0" },
+          { name: "claude_agent_sdk", version: "0.2.187" },
+        ]),
+      },
+    ]);
+    assert.equal(pipVer, "0.2.187");
 
     const invalid = extractResolvedVersion("@grok/agent-sdk", [
       { id: "resolved-version", stdout: "not json" },

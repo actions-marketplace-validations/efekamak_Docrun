@@ -28,6 +28,10 @@ jobs:
           node-version: "24"
           cache: npm
 
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
       - run: npm ci
       - run: npm run catalog:validate
       - run: npm run catalog:run -- --platform=ubuntu --out=generated/platform-ubuntu.json
@@ -42,7 +46,7 @@ jobs:
 
   check-windows:
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -54,6 +58,10 @@ jobs:
         with:
           node-version: "24"
           cache: npm
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
 
       - run: npm ci
       - run: npm run catalog:validate

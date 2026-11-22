@@ -323,6 +323,7 @@ function renderPlatformEnvironments(container, platforms) {
         osLabel,
         env.nodeVersion ? `Node ${env.nodeVersion}` : null,
         env.npmVersion ? `npm ${env.npmVersion}` : null,
+        env.pythonVersion ? `Python ${env.pythonVersion}` : null,
         env.arch || null,
       ].filter(Boolean);
       const detailsEl = el("span", "env-details", parts.join(" · "));

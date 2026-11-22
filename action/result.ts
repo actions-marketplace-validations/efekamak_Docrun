@@ -88,6 +88,7 @@ export function sanitizeRunResultForAction(
     durationMs: result.durationMs,
     platform: result.platform,
     nodeVersion: result.nodeVersion,
+    ...(result.pythonVersion ? { pythonVersion: result.pythonVersion } : {}),
     workspacePreserved: false,
     preservedWorkspaceDir: null,
     cleanup: {

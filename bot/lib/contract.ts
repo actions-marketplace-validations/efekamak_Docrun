@@ -12,7 +12,7 @@ export const LIMITS = {
   MAX_TOTAL_FILE_BYTES: 262_144,
 } as const;
 
-export const ALLOWED_COMMANDS = ["node", "npm"] as const;
+export const ALLOWED_COMMANDS = ["node", "npm", "python", "pip", "uv"] as const;
 export type AllowedCommand = (typeof ALLOWED_COMMANDS)[number];
 
 export const FAILURE_CATEGORIES = [

@@ -50,6 +50,7 @@ export type QuickstartRunResult = {
   durationMs: number;
   platform: string;
   nodeVersion: string;
+  pythonVersion?: string;
   workspacePreserved: boolean;
   preservedWorkspaceDir: string | null;
   cleanup: {
@@ -160,7 +161,10 @@ export function boundOutput(
   return truncateUtf8(cleaned, maxBytes);
 }
 
-export function buildMinimalEnv(workspaceDir?: string): NodeJS.ProcessEnv {
+export function buildMinimalEnv(
+  workspaceDir?: string,
+  venvDir?: string,
+): NodeJS.ProcessEnv {
   const allowKeys = [
     "PATH",
     "Path",
@@ -192,12 +196,29 @@ export function buildMinimalEnv(workspaceDir?: string): NodeJS.ProcessEnv {
 
   env.CI = "true";
   env.NO_COLOR = "1";
+  env.PYTHONUTF8 = "1";
+  env.PYTHONUNBUFFERED = "1";
+  env.PIP_DISABLE_PIP_VERSION_CHECK = "1";
+  env.PIP_NO_INPUT = "1";
   env.npm_config_update_notifier = "false";
   env.npm_config_fund = "false";
   env.npm_config_audit = "false";
   if (workspaceDir) {
     env.npm_config_cache = path.join(workspaceDir, ".npm-cache");
     env.npm_config_userconfig = path.join(workspaceDir, ".npmrc-empty");
+    env.PIP_CACHE_DIR = path.join(workspaceDir, ".pip-cache");
+    env.UV_CACHE_DIR = path.join(workspaceDir, ".uv-cache");
+  }
+  if (venvDir) {
+    const venvBin =
+      process.platform === "win32" ? path.join(venvDir, "Scripts") : path.join(venvDir, "bin");
+    const existingPath = env.PATH ?? env.Path ?? "";
+    const nextPath = existingPath.length > 0 ? `${venvBin}${path.delimiter}${existingPath}` : venvBin;
+    env.VIRTUAL_ENV = venvDir;
+    env.PATH = nextPath;
+    if (process.platform === "win32" && env.Path !== undefined) {
+      env.Path = nextPath;
+    }
   }
   return env;
 }
@@ -223,10 +244,23 @@ export type Toolchain = {
   nodePath: string;
   nodeVersion: string;
   npmCliPath: string | null;
+  pythonPath?: string | null;
+  pythonVersion?: string | null;
+  uvPath?: string | null;
+};
+
+type PythonWorkspaceEnv = {
+  venvDir: string | null;
+  venvPython: string | null;
+  pythonVersion: string | null;
+  error: string | null;
 };
 
 const NODE_VERSION_REGEX = /^v\d+\.\d+\.\d+[0-9A-Za-z.+-]{0,32}$/;
-const NODE_VERSION_PROBE_TIMEOUT_MS = 10_000;
+const PYTHON_VERSION_REGEX = /^Python (\d+\.\d+\.\d+[0-9A-Za-z.+-]{0,24})/;
+const UV_VERSION_REGEX = /^uv \d+\.\d+/;
+const VERSION_PROBE_TIMEOUT_MS = 10_000;
+const VENV_CREATE_TIMEOUT_MS = 60_000;
 
 // Relative PATH entries are skipped so a checked-out repository can never
 // supply the node or npm that docrun executes.
@@ -322,7 +356,7 @@ async function probeNodeVersion(nodePath: string): Promise<string | null> {
     timer = setTimeout(() => {
       killProcessTree(child.pid);
       finish(null);
-    }, NODE_VERSION_PROBE_TIMEOUT_MS);
+    }, VERSION_PROBE_TIMEOUT_MS);
 
     child.stdout?.on("data", (chunk: Buffer) => {
       if (stdout.length < 128) {
@@ -377,6 +411,198 @@ async function findNpmCliForNode(
   return findNpmCliOnPath();
 }
 
+async function probeCommandVersion(
+  execPath: string,
+  args: string[],
+  regex: RegExp,
+): Promise<string | null> {
+  return new Promise<string | null>((resolve) => {
+    let settled = false;
+    let output = "";
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (match: string | null) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(match);
+    };
+
+    let child;
+    try {
+      child = spawn(execPath, args, {
+        env: buildMinimalEnv(),
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch {
+      finish(null);
+      return;
+    }
+
+    timer = setTimeout(() => {
+      killProcessTree(child.pid);
+      finish(null);
+    }, VERSION_PROBE_TIMEOUT_MS);
+
+    const onData = (chunk: Buffer) => {
+      if (output.length < 256) {
+        output += chunk.toString("utf8");
+      }
+    };
+    child.stdout?.on("data", onData);
+    child.stderr?.on("data", onData);
+    child.on("error", () => finish(null));
+    child.on("close", (code) => {
+      if (code !== 0) {
+        finish(null);
+        return;
+      }
+      const m = output.trim().match(regex);
+      finish(m ? (m[1] ?? m[0]) : null);
+    });
+  });
+}
+
+async function isExecutableFile(candidate: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(candidate);
+    if (!stat.isFile()) {
+      return false;
+    }
+    if (process.platform !== "win32") {
+      await fs.access(candidate, fsConstants.X_OK);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function findPythonOnPath(): Promise<{ path: string; version: string } | null> {
+  const names = process.platform === "win32" ? ["python.exe", "python3.exe"] : ["python3", "python"];
+  for (const dir of absolutePathDirs()) {
+    if (process.platform === "win32") {
+      const normalizedDir = dir.replace(/\\/g, "/").toLowerCase();
+      if (normalizedDir.endsWith("/microsoft/windowsapps")) {
+        continue;
+      }
+    }
+    for (const fileName of names) {
+      const candidate = path.join(dir, fileName);
+      if (!(await isExecutableFile(candidate))) {
+        continue;
+      }
+      const version = await probeCommandVersion(candidate, ["--version"], PYTHON_VERSION_REGEX);
+      if (version) {
+        return { path: candidate, version };
+      }
+    }
+  }
+  return null;
+}
+
+export async function findUvOnPath(): Promise<string | null> {
+  const fileName = process.platform === "win32" ? "uv.exe" : "uv";
+  for (const dir of absolutePathDirs()) {
+    const candidate = path.join(dir, fileName);
+    if (!(await isExecutableFile(candidate))) {
+      continue;
+    }
+    const version = await probeCommandVersion(candidate, ["--version"], UV_VERSION_REGEX);
+    if (version) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+async function createPythonWorkspaceVenv(
+  pythonInfo: { path: string; version: string } | null,
+  workspaceDir: string,
+): Promise<PythonWorkspaceEnv> {
+  if (!pythonInfo) {
+    return {
+      venvDir: null,
+      venvPython: null,
+      pythonVersion: null,
+      error: "Python executable was not found on PATH.",
+    };
+  }
+
+  const venvDir = path.join(workspaceDir, ".venv");
+  const venvPython =
+    process.platform === "win32"
+      ? path.join(venvDir, "Scripts", "python.exe")
+      : path.join(venvDir, "bin", "python");
+
+  const creation = await new Promise<{ ok: boolean; error: string | null }>((resolve) => {
+    let settled = false;
+    let stderr = "";
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (res: { ok: boolean; error: string | null }) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(res);
+    };
+
+    let child;
+    try {
+      child = spawn(pythonInfo.path, ["-m", "venv", venvDir], {
+        cwd: workspaceDir,
+        env: buildMinimalEnv(workspaceDir),
+        shell: false,
+        detached: process.platform !== "win32",
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+    } catch (err) {
+      finish({ ok: false, error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+
+    timer = setTimeout(() => {
+      killProcessTree(child.pid);
+      finish({ ok: false, error: `Creating Python virtual environment timed out after ${VENV_CREATE_TIMEOUT_MS}ms.` });
+    }, VENV_CREATE_TIMEOUT_MS);
+
+    child.stderr?.on("data", (chunk: Buffer) => {
+      if (stderr.length < 4096) {
+        stderr += chunk.toString("utf8");
+      }
+    });
+    child.on("error", (err) => finish({ ok: false, error: err.message }));
+    child.on("close", (code) => {
+      if (code === 0) {
+        finish({ ok: true, error: null });
+      } else {
+        const detail = stderr.trim();
+        finish({
+          ok: false,
+          error: detail
+            ? `Failed to create Python virtual environment (exit ${code ?? "null"}): ${detail}`
+            : `Failed to create Python virtual environment (exit ${code ?? "null"}).`,
+        });
+      }
+    });
+  });
+
+  if (!creation.ok || !(await fileExists(venvPython))) {
+    return {
+      venvDir: null,
+      venvPython: null,
+      pythonVersion: pythonInfo.version,
+      error: creation.error ?? "Python virtual environment was created without a python binary.",
+    };
+  }
+
+  return {
+    venvDir,
+    venvPython,
+    pythonVersion: pythonInfo.version,
+    error: null,
+  };
+}
+
 export async function resolveToolchain(mode: ToolchainMode = "host"): Promise<Toolchain> {
   if (mode === "path") {
     const nodeOnPath = await findNodeOnPath();
@@ -403,15 +629,30 @@ export async function resolveExecutable(
   command: AllowedCommand,
   args: string[],
   toolchain?: Toolchain,
+  pythonEnv?: PythonWorkspaceEnv | null,
 ): Promise<{ execPath: string; execArgs: string[] }> {
   const resolved = toolchain ?? (await resolveToolchain("host"));
   if (command === "node") {
     return { execPath: resolved.nodePath, execArgs: args };
   }
-  if (resolved.npmCliPath) {
-    return { execPath: resolved.nodePath, execArgs: [resolved.npmCliPath, ...args] };
+  if (command === "npm") {
+    if (resolved.npmCliPath) {
+      return { execPath: resolved.nodePath, execArgs: [resolved.npmCliPath, ...args] };
+    }
+    return { execPath: "npm", execArgs: args };
   }
-  return { execPath: "npm", execArgs: args };
+  if (command === "python") {
+    const py = pythonEnv?.venvPython ?? resolved.pythonPath ?? "python";
+    return { execPath: py, execArgs: args };
+  }
+  if (command === "pip") {
+    const py = pythonEnv?.venvPython ?? resolved.pythonPath;
+    if (py) {
+      return { execPath: py, execArgs: ["-m", "pip", ...args] };
+    }
+    return { execPath: "pip", execArgs: args };
+  }
+  return { execPath: resolved.uvPath ?? "uv", execArgs: args };
 }
 
 function killProcessTree(pid: number | undefined): void {
@@ -546,9 +787,41 @@ async function spawnStepProcess(
   timeoutMs: number,
   maxStreamBytes: number,
   toolchain: Toolchain,
+  pythonEnv: PythonWorkspaceEnv | null,
 ): Promise<RawSpawnResult> {
   const started = Date.now();
-  const { execPath, execArgs } = await resolveExecutable(step.command, step.args, toolchain);
+  if ((step.command === "python" || step.command === "pip") && pythonEnv?.error) {
+    return {
+      exitCode: null,
+      signal: null,
+      timedOut: false,
+      spawnError: pythonEnv.error,
+      stdout: "",
+      stderr: "",
+      stdoutCapped: false,
+      stderrCapped: false,
+      durationMs: Date.now() - started,
+    };
+  }
+  if (step.command === "uv" && !toolchain.uvPath) {
+    return {
+      exitCode: null,
+      signal: null,
+      timedOut: false,
+      spawnError: "uv executable was not found on PATH.",
+      stdout: "",
+      stderr: "",
+      stdoutCapped: false,
+      stderrCapped: false,
+      durationMs: Date.now() - started,
+    };
+  }
+  const { execPath, execArgs } = await resolveExecutable(
+    step.command,
+    step.args,
+    toolchain,
+    pythonEnv,
+  );
   const captureCap = maxStreamBytes * 4;
 
   return new Promise<RawSpawnResult>((resolve) => {
@@ -559,7 +832,7 @@ async function spawnStepProcess(
 
     const child = spawn(execPath, execArgs, {
       cwd,
-      env: buildMinimalEnv(cwd),
+      env: buildMinimalEnv(cwd, pythonEnv?.venvDir ?? undefined),
       shell: false,
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
@@ -689,6 +962,25 @@ function classifyStepFailure(
     if (step.command === "npm" && (step.args[0] === "install" || step.args[0] === "i" || step.args[0] === "ci")) {
       return "install_failed";
     }
+    if (step.command === "pip" && step.args[0] === "install") {
+      return "install_failed";
+    }
+    if (
+      step.command === "python" &&
+      step.args[0] === "-m" &&
+      step.args[1] === "pip" &&
+      step.args[2] === "install"
+    ) {
+      return "install_failed";
+    }
+    if (
+      step.command === "uv" &&
+      (step.args[0] === "sync" ||
+        step.args[0] === "add" ||
+        (step.args[0] === "pip" && step.args[1] === "install"))
+    ) {
+      return "install_failed";
+    }
     return "runtime_failed";
   }
   return "assertion_failed";
@@ -774,7 +1066,20 @@ export async function runQuickstartContract(
   }
 
   const toolchain = await resolveToolchain(options.toolchain ?? "host");
+  const usesPython = contract.steps.some((s) => s.command === "python" || s.command === "pip");
+  const usesUv = contract.steps.some((s) => s.command === "uv");
+  let pythonInfo: { path: string; version: string } | null = null;
+  if (usesPython) {
+    pythonInfo = await findPythonOnPath();
+    toolchain.pythonPath = pythonInfo?.path ?? null;
+    toolchain.pythonVersion = pythonInfo?.version ?? null;
+  }
+  if (usesUv) {
+    toolchain.uvPath = await findUvOnPath();
+  }
+
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-"));
+  let pythonEnv: PythonWorkspaceEnv | null = null;
   const stepResults: StepResult[] = [];
   let overallStatus: "passed" | "failed" = "passed";
   let overallFailureCategory: FailureCategory | null = null;
@@ -787,6 +1092,10 @@ export async function runQuickstartContract(
       const targetPath = resolveContainedPath(workspaceDir, relPath);
       await fs.mkdir(path.dirname(targetPath), { recursive: true });
       await fs.writeFile(targetPath, content, "utf8");
+    }
+
+    if (usesPython) {
+      pythonEnv = await createPythonWorkspaceVenv(pythonInfo, workspaceDir);
     }
 
     for (const step of contract.steps) {
@@ -822,6 +1131,7 @@ export async function runQuickstartContract(
         effectiveTimeoutMs,
         maxStreamBytes,
         toolchain,
+        pythonEnv,
       );
       const boundedStdout = boundOutput(raw.stdout, maxStreamBytes);
       const boundedStderr = boundOutput(
@@ -919,6 +1229,7 @@ export async function runQuickstartContract(
     durationMs: Date.now() - startedMs,
     platform: process.platform,
     nodeVersion: toolchain.nodeVersion,
+    ...(toolchain.pythonVersion ? { pythonVersion: toolchain.pythonVersion } : {}),
     workspacePreserved: preserveWorkspace,
     preservedWorkspaceDir: preserveWorkspace ? workspaceDir : null,
     cleanup,
