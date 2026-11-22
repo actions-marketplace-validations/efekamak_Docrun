@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "name": "demo-invalid-quickstart",
+  "steps": [
+    {
+      "id": "disallowed-command",
+      "command": "bash",
+      "args": ["-c", "echo should never execute"],
+      "timeoutMs": 5000,
+      "expect": {
+        "exitCode": 0
+      }
+    }
+  ]
+}

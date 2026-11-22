@@ -12,10 +12,10 @@ import {
 import {
   redactSecrets,
   runQuickstartContract,
-  truncateUtf8,
   type AssertionResult,
   type QuickstartRunResult,
 } from "../bot/lib/execute.js";
+import { sanitizePublicExcerpt as sanitizeSharedPublicExcerpt } from "../bot/lib/public-output.js";
 import { CATALOG_LIMITS } from "./catalog-limits.js";
 import { ShieldsEndpointSchema, generateBadges, writeBadges } from "./badges.js";
 import { HistoryDocumentSchema } from "./history.js";
@@ -278,23 +278,11 @@ export function extractResolvedVersion(
   }
 }
 
-const LOCAL_PATH_PATTERNS: Array<[RegExp, string]> = [
-  [/[A-Za-z]:\\[^\s"'`]*docrun-[A-Za-z0-9_-]+/g, "<temp-workspace>"],
-  [/\/[^\s"'`]*docrun-[A-Za-z0-9_-]+/g, "<temp-workspace>"],
-  [/[A-Za-z]:\\Users\\[^\\\s"'`]+/g, "<local-user>"],
-  [/\/(?:Users|home)\/[^/\s"'`]+/g, "<local-user>"],
-  [/[A-Za-z]:\\a\\[^\\\s"'`]+/g, "<runner-workspace>"],
-];
-
 export function sanitizePublicExcerpt(
   text: string,
   maxBytes: number = CATALOG_LIMITS.PUBLIC_EXCERPT_BYTES,
 ): { text: string; truncated: boolean } {
-  let clean = redactSecrets(text);
-  for (const [pattern, replacement] of LOCAL_PATH_PATTERNS) {
-    clean = clean.replace(pattern, replacement);
-  }
-  return truncateUtf8(clean, maxBytes);
+  return sanitizeSharedPublicExcerpt(text, maxBytes);
 }
 
 export function normalizeTargetResult(

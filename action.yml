@@ -1,0 +1,31 @@
+name: "docrun"
+description: "Run a declared docrun.json Node/npm quickstart contract in a fresh temporary workspace and report evidence."
+author: "efekamak"
+branding:
+  icon: "check-square"
+  color: "green"
+inputs:
+  contract:
+    description: "Relative path to the docrun.json contract inside working-directory."
+    required: false
+    default: "docrun.json"
+  working-directory:
+    description: "Relative path to the project directory inside GITHUB_WORKSPACE."
+    required: false
+    default: "."
+outputs:
+  status:
+    description: "Run outcome: passed, failed, invalid, or error."
+  failure-category:
+    description: "Failure category on non-passing runs, or empty string when passed."
+  first-failed-step:
+    description: "ID of the first failed step, or empty string if none."
+  fingerprint:
+    description: "Deterministic failure fingerprint, or empty string when passed."
+  duration-ms:
+    description: "Total execution duration in milliseconds."
+  result-path:
+    description: "Path under RUNNER_TEMP to the sanitized JSON run result."
+runs:
+  using: "node24"
+  main: "dist-action/index.js"

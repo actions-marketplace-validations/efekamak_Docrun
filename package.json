@@ -1,6 +1,6 @@
 {
   "name": "docrun",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Execute a declared package quickstart contract in a fresh temporary workspace and turn failures into evidence-backed maintainer reports.",
@@ -13,14 +13,18 @@
     "catalog:run": "node --import tsx scripts/run-catalog.ts",
     "status:aggregate": "node --import tsx scripts/aggregate-status.ts",
     "site:build": "node --import tsx scripts/build-status-site.ts",
+    "action:build": "ncc build action/index.ts -o dist-action --minify --license licenses.txt",
+    "action:verify": "node --check dist-action/index.js && node --import tsx scripts/verify-action-bundle.ts",
     "dev": "agent-sdk dev"
   },
   "dependencies": {
+    "@actions/core": "3.0.1",
     "@grok/agent-sdk": "0.7.2",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@vercel/ncc": "0.45.0",
     "typescript": "6.0.3"
   }
 }

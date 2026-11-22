@@ -6,6 +6,58 @@ Execute declared Node/npm quickstart contracts (`docrun.json`) in fresh temporar
 
 **Live quickstart checks:** [efekamak.github.io/Docrun](https://efekamak.github.io/Docrun/)
 
+## Use in your repository
+
+Run your own `docrun.json` quickstart contract in GitHub Actions without any extra install step, model key, or setup action:
+
+```yaml
+name: Quickstart check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quickstart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: efekamak/Docrun@v0.3.0
+        with:
+          contract: docrun.json
+```
+
+Pin to an exact release tag (`@v0.3.0`) or a full commit SHA for stricter supply-chain control. Do not pin to `@main`.
+
+### Action inputs
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `contract` | `docrun.json` | Relative path to the contract inside `working-directory`. |
+| `working-directory` | `.` | Relative directory inside `GITHUB_WORKSPACE` (useful for monorepos). |
+
+### Action outputs
+
+| Output | Description |
+| --- | --- |
+| `status` | `passed`, `failed`, `invalid`, or `error`. |
+| `failure-category` | Failure category on non-passing runs; empty when passed. |
+| `first-failed-step` | ID of the first failed step; empty if none. |
+| `fingerprint` | Stable failure fingerprint; empty when passed. |
+| `duration-ms` | Total run duration in milliseconds. |
+| `result-path` | Path under `RUNNER_TEMP` to the sanitized JSON run result. |
+
+On `failed` or `invalid` runs, the action writes the sanitized JSON result file, sets all outputs, and posts a bounded HTML summary to the GitHub Step Summary before failing the step. Downstream steps with `if: always()` can still read the outputs and `result-path`.
+
+The action wrapper itself makes no network requests, strips runner secrets (`GITHUB_TOKEN`, OIDC, and API keys) from child processes, and runs only allowlisted `node`/`npm` commands with `shell: false`. Contracts that run `npm install` still talk to the npm registry and can run package lifecycle scripts as the GitHub runner user (not a security sandbox).
+
 ## 1. What problem does this solve?
 
 Unit tests often pass in a maintainer's repository while the published quickstart fails for a new user on Linux or Windows:

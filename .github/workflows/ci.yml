@@ -21,6 +21,67 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Action integration (passing fixture, before npm ci)
+        id: action_pass
+        uses: ./
+        with:
+          contract: fixtures/passing/docrun.json
+
+      - name: Assert passing action outputs
+        shell: bash
+        env:
+          OUT_STATUS: ${{ steps.action_pass.outputs.status }}
+          OUT_CATEGORY: ${{ steps.action_pass.outputs.failure-category }}
+          OUT_RESULT_PATH: ${{ steps.action_pass.outputs.result-path }}
+        run: |
+          test "$OUT_STATUS" = "passed"
+          test -z "$OUT_CATEGORY"
+          test -f "$OUT_RESULT_PATH"
+
+      - name: Action integration (failing fixture)
+        id: action_fail
+        continue-on-error: true
+        uses: ./
+        with:
+          contract: fixtures/failing/docrun.json
+
+      - name: Assert failing action outcome and outputs
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.action_fail.outcome }}
+          OUT_STATUS: ${{ steps.action_fail.outputs.status }}
+          OUT_CATEGORY: ${{ steps.action_fail.outputs.failure-category }}
+          OUT_STEP: ${{ steps.action_fail.outputs.first-failed-step }}
+          OUT_FINGERPRINT: ${{ steps.action_fail.outputs.fingerprint }}
+          OUT_RESULT_PATH: ${{ steps.action_fail.outputs.result-path }}
+        run: |
+          test "$OUTCOME" = "failure"
+          test "$OUT_STATUS" = "failed"
+          test "$OUT_CATEGORY" = "assertion_failed"
+          test "$OUT_STEP" = "run-example"
+          test -n "$OUT_FINGERPRINT"
+          test -f "$OUT_RESULT_PATH"
+
+      - name: Action integration (invalid fixture)
+        id: action_invalid
+        continue-on-error: true
+        uses: ./
+        with:
+          contract: fixtures/invalid/docrun.json
+
+      - name: Assert invalid action outcome and outputs
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.action_invalid.outcome }}
+          OUT_STATUS: ${{ steps.action_invalid.outputs.status }}
+          OUT_CATEGORY: ${{ steps.action_invalid.outputs.failure-category }}
+          OUT_RESULT_PATH: ${{ steps.action_invalid.outputs.result-path }}
+        run: |
+          test "$OUTCOME" = "failure"
+          test "$OUT_STATUS" = "invalid"
+          test "$OUT_CATEGORY" = "contract_invalid"
+          test -f "$OUT_RESULT_PATH"
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -29,6 +90,15 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: node --check site/app.js
+      - run: npm run action:verify
+      - name: Verify committed dist-action bundle is up to date (Ubuntu)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          npm run action:build
+          npm run action:verify
+          git diff --exit-code -- dist-action
+          test -z "$(git status --porcelain -- dist-action)"
       - run: npm test
       - run: npm run validate
       - run: npm run catalog:validate
