@@ -38,6 +38,24 @@ jobs:
           test -z "$OUT_CATEGORY"
           test -f "$OUT_RESULT_PATH"
 
+      - name: Action integration (npm + monorepo working-directory, before setup-node)
+        id: action_npm
+        uses: ./
+        with:
+          working-directory: ./fixtures/action-npm/
+          contract: ./docrun.json
+
+      - name: Assert npm action outputs
+        shell: bash
+        env:
+          OUT_STATUS: ${{ steps.action_npm.outputs.status }}
+          OUT_CATEGORY: ${{ steps.action_npm.outputs.failure-category }}
+          OUT_RESULT_PATH: ${{ steps.action_npm.outputs.result-path }}
+        run: |
+          test "$OUT_STATUS" = "passed"
+          test -z "$OUT_CATEGORY"
+          test -f "$OUT_RESULT_PATH"
+
       - name: Action integration (failing fixture)
         id: action_fail
         continue-on-error: true

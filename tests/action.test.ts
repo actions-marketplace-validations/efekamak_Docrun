@@ -153,13 +153,23 @@ describe("action config and workspace containment", () => {
       }
 
       const monorepo = await resolveActionConfig(
-        { contract: "contracts/docrun.json", workingDirectory: "packages/sdk" },
+        { contract: "./contracts/docrun.json", workingDirectory: "./packages/sdk/" },
         { GITHUB_WORKSPACE: workspace, RUNNER_TEMP: runnerTemp },
       );
       assert.equal(monorepo.ok, true);
       if (monorepo.ok) {
         assert.equal(monorepo.config.contractPath, "contracts/docrun.json");
         assert.equal(monorepo.config.workingDir, await fs.realpath(subDir));
+      }
+
+      const dotSlashRoot = await resolveActionConfig(
+        { contract: "./docrun.json", workingDirectory: "./" },
+        { GITHUB_WORKSPACE: workspace, RUNNER_TEMP: runnerTemp },
+      );
+      assert.equal(dotSlashRoot.ok, true);
+      if (dotSlashRoot.ok) {
+        assert.equal(dotSlashRoot.config.contractPath, "docrun.json");
+        assert.equal(dotSlashRoot.config.workingDir, await fs.realpath(workspace));
       }
     });
   });
@@ -172,7 +182,9 @@ describe("action config and workspace containment", () => {
       const badWorkingDirs = [
         "..",
         "../outside",
+        "./../outside",
         "a/../b",
+        "a/./b",
         "/etc",
         "\\windows",
         "C:relative",
@@ -181,7 +193,7 @@ describe("action config and workspace containment", () => {
         "missing-dir",
         "not-a-dir.txt",
         "trailing-dot.",
-        "trailing-space ",
+        "trailing-space /sub",
       ];
 
       for (const wd of badWorkingDirs) {
@@ -635,6 +647,31 @@ describe("action runner and bundled entrypoint end-to-end", () => {
       const summary = await fs.readFile(summaryFile, "utf8");
       assert.match(summary, /<h3>docrun: failed<\/h3>/);
       assert.match(summary, /Failure evidence/);
+    });
+  });
+
+  it("runs npm step via committed bundle with ./ inputs and empty npm_execpath", async () => {
+    await withTempDirs(async ({ runnerTemp }) => {
+      const outputFile = path.join(runnerTemp, "github-output-npm.txt");
+      const summaryFile = path.join(runnerTemp, "github-summary-npm.md");
+      await fs.writeFile(outputFile, "", "utf8");
+      await fs.writeFile(summaryFile, "", "utf8");
+
+      const runRes = await runBundledActionSubprocess({
+        GITHUB_WORKSPACE: path.resolve("."),
+        RUNNER_TEMP: runnerTemp,
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_STEP_SUMMARY: summaryFile,
+        INPUT_CONTRACT: "./docrun.json",
+        "INPUT_WORKING-DIRECTORY": "./fixtures/action-npm/",
+        npm_execpath: "",
+      });
+
+      assert.equal(runRes.code, 0, `Unexpected exit ${runRes.code}: ${runRes.stdout}\n${runRes.stderr}`);
+      const outputs = parseGithubOutputFile(await fs.readFile(outputFile, "utf8"));
+      assert.equal(outputs.status, "passed");
+      assert.equal(outputs["failure-category"], "");
+      assert.ok(outputs["result-path"].length > 0);
     });
   });
 });

@@ -209,6 +209,48 @@ async function fileExists(targetPath: string): Promise<boolean> {
   }
 }
 
+async function findNpmCliOnPath(): Promise<string | null> {
+  const pathEnv = process.env.PATH ?? process.env.Path ?? "";
+  if (pathEnv.length === 0) {
+    return null;
+  }
+
+  const seen = new Set<string>();
+  for (const rawDir of pathEnv.split(path.delimiter)) {
+    const dir = rawDir.trim().replace(/^"(.*)"$/, "$1");
+    if (dir.length === 0 || seen.has(dir)) {
+      continue;
+    }
+    seen.add(dir);
+
+    const candidates = [
+      path.join(dir, "node_modules", "npm", "bin", "npm-cli.js"),
+      path.resolve(dir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    ];
+    for (const candidate of candidates) {
+      if (await fileExists(candidate)) {
+        return candidate;
+      }
+    }
+
+    if (process.platform !== "win32") {
+      const npmBin = path.join(dir, "npm");
+      if (await fileExists(npmBin)) {
+        try {
+          const resolved = await fs.realpath(npmBin);
+          if (resolved.endsWith(".js") && (await fileExists(resolved))) {
+            return resolved;
+          }
+        } catch {
+          // Ignore unreadable PATH entries.
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 export async function resolveExecutable(
   command: AllowedCommand,
   args: string[],
@@ -232,6 +274,11 @@ export async function resolveExecutable(
     if (await fileExists(candidate)) {
       return { execPath: process.execPath, execArgs: [candidate, ...args] };
     }
+  }
+
+  const pathNpmCli = await findNpmCliOnPath();
+  if (pathNpmCli) {
+    return { execPath: process.execPath, execArgs: [pathNpmCli, ...args] };
   }
 
   return { execPath: "npm", execArgs: args };

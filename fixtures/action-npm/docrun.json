@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "name": "action-npm-smoke",
+  "steps": [
+    {
+      "id": "check-npm",
+      "command": "npm",
+      "args": ["--version"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    }
+  ]
+}

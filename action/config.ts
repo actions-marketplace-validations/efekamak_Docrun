@@ -77,13 +77,36 @@ async function resolveExistingDirectory(
   }
 }
 
+function normalizeContractInput(raw: string | undefined): string {
+  const trimmed = (raw ?? "").trim();
+  if (trimmed.length === 0) {
+    return DEFAULT_CONTRACT_PATH;
+  }
+  // Allow common leading "./" or ".\" without weakening traversal/absolute checks.
+  const stripped = trimmed.replace(/^(?:\.\/|\.\\)+/, "");
+  return stripped.length > 0 ? stripped : trimmed;
+}
+
+function normalizeWorkingDirectoryInput(raw: string | undefined): string {
+  const trimmed = (raw ?? "").trim();
+  if (trimmed.length === 0 || trimmed === "." || trimmed === "./" || trimmed === ".\\") {
+    return DEFAULT_WORKING_DIRECTORY;
+  }
+  // Never strip leading slashes or drive prefixes; let isSafeRelativePath reject them.
+  if (trimmed.startsWith("/") || trimmed.startsWith("\\") || /^[A-Za-z]:/.test(trimmed)) {
+    return trimmed;
+  }
+  const withoutLeadingDot = trimmed.replace(/^(?:\.\/|\.\\)+/, "");
+  const withoutTrailingSlash = withoutLeadingDot.replace(/[\\/]$/, "");
+  return withoutTrailingSlash.length > 0 ? withoutTrailingSlash : DEFAULT_WORKING_DIRECTORY;
+}
+
 export async function resolveActionConfig(
   rawInputs: RawActionInputs,
   env: ActionEnv = process.env,
 ): Promise<ResolveActionConfigResult> {
-  const contractInput = (rawInputs.contract ?? "").trim() || DEFAULT_CONTRACT_PATH;
-  const workingDirectoryInput =
-    (rawInputs.workingDirectory ?? "").trim() || DEFAULT_WORKING_DIRECTORY;
+  const contractInput = normalizeContractInput(rawInputs.contract);
+  const workingDirectoryInput = normalizeWorkingDirectoryInput(rawInputs.workingDirectory);
 
   const workspaceResolved = await resolveExistingDirectory(
     env.GITHUB_WORKSPACE,
