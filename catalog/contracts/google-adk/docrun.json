@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "google-adk",
+  "files": {
+    "package.json": "{\n  \"name\": \"google-adk-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { LlmAgent } from \"@google/adk\";\n\nconst agent = new LlmAgent({\n  name: \"docrun_agent\",\n  model: \"gemini-2.5-flash\",\n  instruction: \"Respond concisely.\",\n});\nif (agent.name !== \"docrun_agent\") {\n  throw new Error(\"Expected LlmAgent instance\");\n}\nconsole.log(\"google-adk-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "@google/adk@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "@google/adk", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-agent",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["google-adk-ready"]
+      }
+    }
+  ]
+}

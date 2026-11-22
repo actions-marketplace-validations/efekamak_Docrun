@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "claude-agent-sdk",
+  "files": {
+    "package.json": "{\n  \"name\": \"claude-agent-sdk-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { createSdkMcpServer, query, tool } from \"@anthropic-ai/claude-agent-sdk\";\n\nif (typeof query !== \"function\") {\n  throw new Error(\"Expected query export\");\n}\nconst ping = tool(\"ping\", \"Return pong\", {}, async () => ({\n  content: [{ type: \"text\", text: \"pong\" }],\n}));\nconst server = createSdkMcpServer({\n  name: \"docrun-check\",\n  version: \"0.1.0\",\n  tools: [ping],\n});\nif (!server || server.name !== \"docrun-check\") {\n  throw new Error(\"Expected configured MCP server\");\n}\nconsole.log(\"claude-agent-sdk-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "@anthropic-ai/claude-agent-sdk@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "@anthropic-ai/claude-agent-sdk", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-sdk",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["claude-agent-sdk-ready"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "mastra",
+  "files": {
+    "package.json": "{\n  \"name\": \"mastra-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { Mastra } from \"@mastra/core\";\nimport { Agent } from \"@mastra/core/agent\";\n\nconst assistant = new Agent({\n  id: \"assistant\",\n  name: \"assistant\",\n  instructions: \"You are a helpful assistant.\",\n  model: \"openai/gpt-4o-mini\",\n});\nconst mastra = new Mastra({ agents: { assistant } });\nif (!Object.keys(mastra.listAgents()).includes(\"assistant\")) {\n  throw new Error(\"Expected registered Mastra agent\");\n}\nconsole.log(\"mastra-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "@mastra/core@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "@mastra/core", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-mastra",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["mastra-ready"]
+      }
+    }
+  ]
+}

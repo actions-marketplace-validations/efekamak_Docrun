@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "codex-sdk",
+  "files": {
+    "package.json": "{\n  \"name\": \"codex-sdk-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { Codex } from \"@openai/codex-sdk\";\n\nconst codex = new Codex();\nconst thread = codex.startThread();\nif (typeof thread.run !== \"function\" || typeof thread.runStreamed !== \"function\") {\n  throw new Error(\"Expected Codex thread run methods\");\n}\nconsole.log(\"codex-sdk-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "@openai/codex-sdk@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "@openai/codex-sdk", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-codex",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["codex-sdk-ready"]
+      }
+    }
+  ]
+}

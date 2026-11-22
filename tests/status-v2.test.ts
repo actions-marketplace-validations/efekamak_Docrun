@@ -10,6 +10,7 @@ import {
   type ShieldsEndpointBadge,
 } from "../scripts/badges.js";
 import { buildStatusSite, type CatalogDocument } from "../scripts/catalog-lib.js";
+import { CATALOG_LIMITS } from "../scripts/catalog-limits.js";
 import { loadPlatformArtifact, mergePlatformRuns } from "../scripts/merge-platform-results.js";
 import { assertPlatformMatchesHost, cleanMetadataValue } from "../scripts/platform-metadata.js";
 import {
@@ -215,12 +216,13 @@ describe("platform artifact schema", () => {
     assert.deepEqual(PlatformRunDocumentSchema.parse(JSON.parse(JSON.stringify(windows))), windows);
   });
 
-  it("accepts exactly 10 targets and rejects more than 10", () => {
-    const ten = Array.from({ length: 10 }, (_, index) => target(`target-${index + 1}`));
-    assert.equal(PlatformRunDocumentSchema.safeParse(platformRaw("ubuntu", ten)).success, true);
+  it("accepts up to MAX_TARGETS targets and rejects more than MAX_TARGETS", () => {
+    const maxTargets = CATALOG_LIMITS.MAX_TARGETS;
+    const atLimit = Array.from({ length: maxTargets }, (_, index) => target(`target-${index + 1}`));
+    assert.equal(PlatformRunDocumentSchema.safeParse(platformRaw("ubuntu", atLimit)).success, true);
 
-    const eleven = [...ten, target("target-11")];
-    assert.equal(PlatformRunDocumentSchema.safeParse(platformRaw("windows", eleven)).success, false);
+    const overLimit = [...atLimit, target(`target-${maxTargets + 1}`)];
+    assert.equal(PlatformRunDocumentSchema.safeParse(platformRaw("windows", overLimit)).success, false);
   });
 
   it("rejects the wrong kind", () => {

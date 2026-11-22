@@ -30,12 +30,12 @@ import {
 const REPO_ROOT = process.cwd();
 
 describe("catalog validation and security", () => {
-  it("validates the real repository catalog/targets.json and all 10 contracts", async () => {
+  it("validates the real repository catalog/targets.json and all 16 contracts", async () => {
     const outcome = await loadAndValidateCatalog(REPO_ROOT, "catalog/targets.json");
     assert.equal(outcome.ok, true);
     if (!outcome.ok) return;
-    assert.equal(outcome.catalog.targets.length, 10);
-    assert.equal(outcome.contracts.size, 10);
+    assert.equal(outcome.catalog.targets.length, 16);
+    assert.equal(outcome.contracts.size, 16);
   });
 
   it("rejects duplicate target IDs, repo-escaping paths, and non-HTTPS URLs", () => {

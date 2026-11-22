@@ -72,9 +72,15 @@ Unit tests often pass in a maintainer's repository while the published quickstar
 
 ## 2. Live quickstart catalog
 
-`catalog/targets.json` declares 10 real JS/TS SDK install paths tested daily on ephemeral Ubuntu and Windows GitHub-hosted runners (Node.js 24) with no repository secrets:
+`catalog/targets.json` declares 16 real JS/TS SDK install paths tested daily on ephemeral Ubuntu and Windows GitHub-hosted runners (Node.js 24) with no repository secrets:
 
 - **Cursor Agent SDK** (`@grok/agent-sdk`): install + scaffold a local agent + validate
+- **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`): install + import + `createSdkMcpServer` tool registration
+- **OpenAI Agents SDK** (`@openai/agents`): install + import + `Agent` and tool construction
+- **OpenAI Codex SDK** (`@openai/codex-sdk`): install + import + `Codex` thread initialization
+- **Google ADK (TypeScript)** (`@google/adk`): install + import + `LlmAgent` construction
+- **LangGraph JS** (`@langchain/langgraph`): install + compile and invoke local `StateGraph`
+- **Mastra** (`@mastra/core`): install + import + `Mastra` and `Agent` registration
 - **Anthropic TypeScript SDK** (`@anthropic-ai/sdk`): install + import + client instantiation
 - **OpenAI JavaScript SDK** (`openai`): install + import + client instantiation
 - **MCP TypeScript SDK** (`@modelcontextprotocol/sdk`): install + import + `McpServer` registration

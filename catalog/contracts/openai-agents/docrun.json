@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "openai-agents",
+  "files": {
+    "package.json": "{\n  \"name\": \"openai-agents-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { Agent, run, tool } from \"@openai/agents\";\nimport { z } from \"zod\";\n\nif (typeof run !== \"function\") {\n  throw new Error(\"Expected run export\");\n}\nconst pingTool = tool({\n  name: \"ping\",\n  description: \"Return pong\",\n  parameters: z.object({}),\n  execute: async () => \"pong\",\n});\nconst agent = new Agent({\n  name: \"DocrunAssistant\",\n  instructions: \"You are a helpful assistant.\",\n  tools: [pingTool],\n});\nif (agent.name !== \"DocrunAssistant\" || agent.tools.length !== 1) {\n  throw new Error(\"Expected Agent with registered tool\");\n}\nconsole.log(\"openai-agents-ready\");\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "@openai/agents@latest", "zod@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "@openai/agents", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-agent",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["openai-agents-ready"]
+      }
+    }
+  ]
+}

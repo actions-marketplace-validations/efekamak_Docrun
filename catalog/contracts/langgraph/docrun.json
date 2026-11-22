@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "langgraph",
+  "files": {
+    "package.json": "{\n  \"name\": \"langgraph-consumer\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+    "example.mjs": "import { Annotation, END, START, StateGraph } from \"@langchain/langgraph\";\n\nconst State = Annotation.Root({\n  message: Annotation(),\n});\nconst graph = new StateGraph(State)\n  .addNode(\"echo\", () => ({ message: \"langgraph-ready\" }))\n  .addEdge(START, \"echo\")\n  .addEdge(\"echo\", END)\n  .compile();\nconst out = await graph.invoke({ message: \"start\" });\nif (out.message !== \"langgraph-ready\") {\n  throw new Error(`Unexpected state output: ${String(out.message)}`);\n}\nconsole.log(out.message);\n"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "command": "npm",
+      "args": ["install", "@langchain/langgraph@latest", "@langchain/core@latest"],
+      "timeoutMs": 120000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "resolved-version",
+      "command": "npm",
+      "args": ["list", "@langchain/langgraph", "--depth=0", "--json"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0
+      }
+    },
+    {
+      "id": "verify-graph",
+      "command": "node",
+      "args": ["example.mjs"],
+      "timeoutMs": 30000,
+      "expect": {
+        "exitCode": 0,
+        "stdoutIncludes": ["langgraph-ready"]
+      }
+    }
+  ]
+}

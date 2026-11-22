@@ -11,6 +11,60 @@
       "scope": "install + scaffold a local agent + validate"
     },
     {
+      "id": "claude-agent-sdk",
+      "name": "Claude Agent SDK",
+      "package": "@anthropic-ai/claude-agent-sdk",
+      "docsUrl": "https://docs.claude.com/en/api/agent-sdk/overview",
+      "repositoryUrl": "https://github.com/anthropics/claude-agent-sdk-typescript",
+      "contractPath": "catalog/contracts/claude-agent-sdk/docrun.json",
+      "scope": "install + import + createSdkMcpServer tool registration"
+    },
+    {
+      "id": "openai-agents",
+      "name": "OpenAI Agents SDK",
+      "package": "@openai/agents",
+      "docsUrl": "https://openai.github.io/openai-agents-js/",
+      "repositoryUrl": "https://github.com/openai/openai-agents-js",
+      "contractPath": "catalog/contracts/openai-agents/docrun.json",
+      "scope": "install + import + Agent and tool construction"
+    },
+    {
+      "id": "codex-sdk",
+      "name": "OpenAI Codex SDK",
+      "package": "@openai/codex-sdk",
+      "docsUrl": "https://github.com/openai/codex/tree/main/sdk/typescript",
+      "repositoryUrl": "https://github.com/openai/codex",
+      "contractPath": "catalog/contracts/codex-sdk/docrun.json",
+      "scope": "install + import + Codex thread initialization"
+    },
+    {
+      "id": "google-adk",
+      "name": "Google ADK (TypeScript)",
+      "package": "@google/adk",
+      "docsUrl": "https://adk.dev",
+      "repositoryUrl": "https://github.com/google/adk-js",
+      "contractPath": "catalog/contracts/google-adk/docrun.json",
+      "scope": "install + import + LlmAgent construction"
+    },
+    {
+      "id": "langgraph",
+      "name": "LangGraph JS",
+      "package": "@langchain/langgraph",
+      "docsUrl": "https://docs.langchain.com/oss/javascript/langgraph/overview",
+      "repositoryUrl": "https://github.com/langchain-ai/langgraphjs",
+      "contractPath": "catalog/contracts/langgraph/docrun.json",
+      "scope": "install + compile and invoke local StateGraph"
+    },
+    {
+      "id": "mastra",
+      "name": "Mastra",
+      "package": "@mastra/core",
+      "docsUrl": "https://mastra.ai/docs",
+      "repositoryUrl": "https://github.com/mastra-ai/mastra",
+      "contractPath": "catalog/contracts/mastra/docrun.json",
+      "scope": "install + import + Mastra and Agent registration"
+    },
+    {
       "id": "anthropic-sdk",
       "name": "Anthropic TypeScript SDK",
       "package": "@anthropic-ai/sdk",
