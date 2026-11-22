@@ -10,7 +10,7 @@
       "id": "install",
       "command": "npm",
       "args": ["install", "@google/adk@latest"],
-      "timeoutMs": 120000,
+      "timeoutMs": 240000,
       "expect": {
         "exitCode": 0
       }
