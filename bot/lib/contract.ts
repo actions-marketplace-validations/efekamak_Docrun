@@ -31,9 +31,12 @@ export type FailureCategory = (typeof FAILURE_CATEGORIES)[number];
 const SLUG_REGEX = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const WINDOWS_DRIVE_REGEX = /^[A-Za-z]:/;
 const WINDOWS_RESERVED_NAME_REGEX = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i;
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHAR_REGEX = /[\x00-\x1f\x7f]/;
+const WINDOWS_FORBIDDEN_SEGMENT_CHAR_REGEX = /[<>:"|?*]/;
 
 export function isSafeRelativePath(candidate: string): boolean {
-  if (candidate.length === 0 || candidate.length > 240 || candidate.includes("\0")) {
+  if (candidate.length === 0 || candidate.length > 240 || CONTROL_CHAR_REGEX.test(candidate)) {
     return false;
   }
   if (candidate.startsWith("/") || candidate.startsWith("\\")) {
@@ -49,6 +52,9 @@ export function isSafeRelativePath(candidate: string): boolean {
       return false;
     }
     if (segment.endsWith(" ") || segment.endsWith(".")) {
+      return false;
+    }
+    if (WINDOWS_FORBIDDEN_SEGMENT_CHAR_REGEX.test(segment)) {
       return false;
     }
     if (WINDOWS_RESERVED_NAME_REGEX.test(segment)) {

@@ -562,6 +562,10 @@ describe("python runtime support", () => {
     const drift = checkReadmeDrift(proseWithEarlierEnd, contract);
     assert.equal(drift.ok, true);
 
+    assert.equal(isSafeRelativePath("foo.txt:stream"), false);
+    assert.equal(isSafeRelativePath("a\nb.txt"), false);
+    assert.equal(isSafeRelativePath("foo<bar>.txt"), false);
+
     const scrubbed = scrubPublicText("file:///C:/Users/alice/project/index.js and C:/temp/docrun-abc123/a.js");
     assert.equal(scrubbed.includes("alice"), false);
     assert.equal(scrubbed.includes("C:<local-user>"), false);
