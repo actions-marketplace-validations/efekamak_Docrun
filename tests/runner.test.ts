@@ -566,6 +566,12 @@ describe("python runtime support", () => {
     assert.equal(isSafeRelativePath("a\nb.txt"), false);
     assert.equal(isSafeRelativePath("foo<bar>.txt"), false);
 
+    // ReDoS regression guard: 40KB of slashes must complete in linear time (< 50ms).
+    const slashStart = Date.now();
+    const slashRes = scrubPublicText("/".repeat(40_000));
+    assert.equal(slashRes.length, 40_000);
+    assert.ok(Date.now() - slashStart < 50, `Expected linear path scrub, took ${Date.now() - slashStart}ms`);
+
     const scrubbed = scrubPublicText("file:///C:/Users/alice/project/index.js and C:/temp/docrun-abc123/a.js");
     assert.equal(scrubbed.includes("alice"), false);
     assert.equal(scrubbed.includes("C:<local-user>"), false);
