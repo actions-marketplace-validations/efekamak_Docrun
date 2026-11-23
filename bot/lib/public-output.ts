@@ -4,8 +4,10 @@ export const DEFAULT_PUBLIC_EXCERPT_BYTES = 4_096;
 
 export const LOCAL_PATH_PATTERNS: Array<[RegExp, string]> = [
   [/[A-Za-z]:\\[^\s"'`]*docrun-[A-Za-z0-9_-]+/g, "<temp-workspace>"],
+  [/[A-Za-z]:\/[^\s"'`]*docrun-[A-Za-z0-9_-]+/g, "<temp-workspace>"],
   [/\/[^\s"'`]*docrun-[A-Za-z0-9_-]+/g, "<temp-workspace>"],
   [/[A-Za-z]:\\Users\\[^\\\s"'`]+/g, "<local-user>"],
+  [/[A-Za-z]:\/Users\/[^/\s"'`]+/g, "<local-user>"],
   [/\/(?:Users|home)\/[^/\s"'`]+/g, "<local-user>"],
   [/[A-Za-z]:\\a\\[^\\\s"'`]+/g, "<runner-workspace>"],
 ];

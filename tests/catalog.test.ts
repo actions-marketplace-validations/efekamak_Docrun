@@ -416,6 +416,81 @@ describe("catalog runner and status site integration", () => {
           }),
         /Invalid status\.json schema/,
       );
+
+      // Verify normalizeTargetResult scrubs secrets and local paths inside assertions too
+      const leakedRun = {
+        runId: "test-assert-scrub",
+        contractName: "fail-target",
+        schemaVersion: 1,
+        status: "failed" as const,
+        failureCategory: "assertion_failed" as const,
+        firstFailedStepId: "run",
+        startedAt: new Date().toISOString(),
+        durationMs: 10,
+        platform: process.platform,
+        nodeVersion: process.version,
+        workspacePreserved: false,
+        preservedWorkspaceDir: null,
+        cleanup: { attempted: true, succeeded: true, error: null },
+        validationErrors: [],
+        readmeDrift: { checked: false, ok: true, reason: null, expectedCommands: [], observedCommands: [] },
+        steps: [
+          {
+            id: "run",
+            command: "node" as const,
+            args: ["-e", "1"],
+            status: "failed" as const,
+            failureCategory: "assertion_failed" as const,
+            exitCode: 0,
+            signal: null,
+            durationMs: 10,
+            timedOut: false,
+            assertions: [
+              {
+                kind: "stdoutIncludes" as const,
+                expected: "token ghs_SECRETTOKEN1234567890123456",
+                observed: "C:/Users/alice/app.js",
+                passed: false,
+              },
+            ],
+            stdout: "",
+            stderr: "",
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          },
+        ],
+        failedAssertions: [],
+        fingerprint: "abcd1234abcd1234",
+      };
+      const normalizedLeaked = normalizeTargetResult(
+        {
+          id: "fail-target",
+          name: "Fail Target",
+          package: "fail-target",
+          docsUrl: "https://example.com/docs",
+          repositoryUrl: "https://github.com/example/fail-target",
+          contractPath: "contracts/fail.json",
+          scope: "smoke",
+        },
+        {
+          schemaVersion: 1,
+          name: "fail-target",
+          files: {},
+          steps: [
+            {
+              id: "run",
+              command: "node",
+              args: ["-e", "1"],
+              timeoutMs: 10_000,
+              expect: { exitCode: 0 },
+            },
+          ],
+        },
+        leakedRun,
+      );
+      const serializedNorm = JSON.stringify(normalizedLeaked);
+      assert.equal(serializedNorm.includes("ghs_SECRETTOKEN1234567890123456"), false);
+      assert.equal(serializedNorm.includes("alice"), false);
     } finally {
       await fs.rm(tmpBase, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }

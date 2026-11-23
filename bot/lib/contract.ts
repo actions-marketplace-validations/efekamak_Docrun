@@ -261,7 +261,8 @@ const END_MARKER = "<!-- docrun:end -->";
 export function checkReadmeDrift(readmeContent: string, contract: QuickstartContract): ReadmeDriftCheck {
   const expectedCommands = renderContractCommands(contract);
   const startIdx = readmeContent.indexOf(START_MARKER);
-  const endIdx = readmeContent.indexOf(END_MARKER);
+  const endIdx =
+    startIdx === -1 ? -1 : readmeContent.indexOf(END_MARKER, startIdx + START_MARKER.length);
 
   if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
     return {

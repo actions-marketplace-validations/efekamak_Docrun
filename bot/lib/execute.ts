@@ -1053,6 +1053,15 @@ export async function runQuickstartContract(
       if (!(await isRealPathContained(options.readmeBaseDir, readmeFull))) {
         throw new Error(`README symlink escapes base directory: "${contract.readmePath}"`);
       }
+      const readmeStat = await fs.stat(readmeFull);
+      if (!readmeStat.isFile()) {
+        throw new Error(`README path is not a regular file: "${contract.readmePath}"`);
+      }
+      if (readmeStat.size > LIMITS.MAX_CONTRACT_FILE_BYTES) {
+        throw new Error(
+          `README "${contract.readmePath}" exceeds ${LIMITS.MAX_CONTRACT_FILE_BYTES} bytes (got ${readmeStat.size}).`,
+        );
+      }
       const readmeContent = await fs.readFile(readmeFull, "utf8");
       const check = checkReadmeDrift(readmeContent, contract);
       readmeDrift.ok = check.ok;

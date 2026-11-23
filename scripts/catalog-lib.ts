@@ -371,7 +371,12 @@ export function normalizeTargetResult(
       failureCategory: executed.failureCategory,
       exitCode: executed.exitCode,
       durationMs: executed.durationMs,
-      assertions: executed.assertions,
+      assertions: executed.assertions.map((a) => ({
+        kind: a.kind,
+        expected: sanitizePublicExcerpt(a.expected, 512).text,
+        observed: sanitizePublicExcerpt(a.observed, 512).text,
+        passed: a.passed,
+      })),
       stdout: stdout.text,
       stderr: stderr.text,
       stdoutTruncated: executed.stdoutTruncated || stdout.truncated,
