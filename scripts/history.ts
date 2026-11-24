@@ -225,6 +225,7 @@ export async function fetchPreviousHistory(
     });
 
     if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => {});
       return {
         ok: false,
         reason: `History fetch received disallowed redirect status ${response.status}.`,
@@ -232,6 +233,7 @@ export async function fetchPreviousHistory(
     }
 
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
       return {
         ok: false,
         reason: `History fetch returned HTTP ${response.status}.`,

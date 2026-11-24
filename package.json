@@ -1,6 +1,6 @@
 {
   "name": "docrun",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "type": "module",
   "description": "Execute a declared package quickstart contract in a fresh temporary workspace and turn failures into evidence-backed maintainer reports.",

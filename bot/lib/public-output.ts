@@ -6,10 +6,10 @@ export const LOCAL_PATH_PATTERNS: Array<[RegExp, string]> = [
   [/(^|[\s"'`(,=])[A-Za-z]:\\[^\s"'`:]{0,240}docrun-[A-Za-z0-9_-]+/g, "$1<temp-workspace>"],
   [/(^|[\s"'`(,=/])[A-Za-z]:\/[^\s"'`:]{0,240}docrun-[A-Za-z0-9_-]+/g, "$1<temp-workspace>"],
   [/(^|[\s"'`(,=:])\/[^\s"'`:]{0,240}docrun-[A-Za-z0-9_-]+/g, "$1<temp-workspace>"],
-  [/[A-Za-z]:\\Users\\[^\\\s"'`]+/g, "<local-user>"],
-  [/[A-Za-z]:\/Users\/[^/\s"'`]+/g, "<local-user>"],
-  [/\/(?:Users|home)\/[^/\s"'`]+/g, "<local-user>"],
-  [/[A-Za-z]:\\a\\[^\\\s"'`]+/g, "<runner-workspace>"],
+  [/[A-Za-z]:\\Users\\[^\\\s"'`<>|)]+/g, "<local-user>"],
+  [/[A-Za-z]:\/Users\/[^/\s"'`<>|)]+/g, "<local-user>"],
+  [/\/(?:Users|home)\/[^/\s"'`<>|)]+/g, "<local-user>"],
+  [/[A-Za-z]:\\a\\[^\\\s"'`<>|)]+/g, "<runner-workspace>"],
 ];
 
 export type PublicSanitizeOptions = {
