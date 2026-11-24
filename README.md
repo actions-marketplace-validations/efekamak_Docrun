@@ -2,7 +2,7 @@
 
 [![docrun live status](https://img.shields.io/endpoint?url=https%3A%2F%2Fefekamak.github.io%2FDocrun%2Fbadges%2Foverall.json)](https://efekamak.github.io/Docrun/)
 
-Execute declared Node/npm quickstart contracts (`docrun.json`) in fresh temporary workspaces on Ubuntu and Windows, publish live cross-platform verification results, and turn failures into evidence-backed maintainer reports using Cursor's Agent SDK (`@grok/agent-sdk`).
+Execute declared Node/npm and Python/pip/uv quickstart contracts (`docrun.json`) in fresh temporary workspaces on Ubuntu and Windows, publish live cross-platform verification results, and turn failures into evidence-backed maintainer reports using Cursor's Agent SDK (`@grok/agent-sdk`).
 
 **Live quickstart checks:** [efekamak.github.io/Docrun](https://efekamak.github.io/Docrun/)
 
@@ -29,12 +29,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: efekamak/Docrun@v0.4.0
+      - uses: efekamak/Docrun@v0.4.2
         with:
           contract: docrun.json
 ```
 
-Pin to an exact release tag (`@v0.4.0`) or a full commit SHA for stricter supply-chain control. Do not pin to `@main`.
+Pin to an exact release tag (`@v0.4.2`) or a full commit SHA for stricter supply-chain control. Do not pin to `@main`.
 
 ### Action inputs
 
@@ -119,7 +119,7 @@ npm run catalog:validate
 Run the live catalog for the current OS, aggregate results, and build the static status site locally:
 
 ```bash
-# Runs the 10 contracts on the current host OS (writes generated/platform-<os>.json)
+# Runs the 20 contracts on the current host OS (writes generated/platform-<os>.json)
 npm run catalog:run
 
 # Combine platform partial artifacts into generated/status.json, history.json, and badges/
@@ -187,8 +187,8 @@ Contracts are strict JSON files (`docrun.json`) validated with Zod before any pr
 Validation rules:
 
 - `schemaVersion` must be `1`.
-- Only `node` and `npm` commands are allowed (`shell: false`, explicit argument arrays).
-- Catalog contracts additionally restrict `npm` subcommands to `install`, `list`, and `exec`.
+- Only `node`, `npm`, `python`, `pip`, and `uv` commands are allowed (`shell: false`, explicit argument arrays).
+- Catalog contracts additionally restrict subcommands (`npm`: `install`/`list`/`exec`; `pip`: `install`/`list`/`show`; `uv`: `pip`/`venv`/`run`/`sync`/`add`/`--version`).
 - File paths must stay inside the temporary workspace (`..`, absolute paths, drive prefixes, Windows reserved names, and null bytes are rejected).
 - Environment variables and secrets are not accepted in contracts.
 - Optional `readmePath` checks a marked `<!-- docrun:start --> ... <!-- docrun:end -->` block for command drift.

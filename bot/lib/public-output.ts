@@ -3,9 +3,11 @@ import { redactSecrets, stripAnsi, truncateUtf8 } from "./execute.js";
 export const DEFAULT_PUBLIC_EXCERPT_BYTES = 4_096;
 
 export const LOCAL_PATH_PATTERNS: Array<[RegExp, string]> = [
-  [/[A-Za-z]:\\[^\s"'`]*docrun-[A-Za-z0-9_-]+/g, "<temp-workspace>"],
-  [/\/[^\s"'`]*docrun-[A-Za-z0-9_-]+/g, "<temp-workspace>"],
+  [/(^|[\s"'`(,=])[A-Za-z]:\\[^\s"'`:]{0,240}docrun-[A-Za-z0-9_-]+/g, "$1<temp-workspace>"],
+  [/(^|[\s"'`(,=/])[A-Za-z]:\/[^\s"'`:]{0,240}docrun-[A-Za-z0-9_-]+/g, "$1<temp-workspace>"],
+  [/(^|[\s"'`(,=:])\/[^\s"'`:]{0,240}docrun-[A-Za-z0-9_-]+/g, "$1<temp-workspace>"],
   [/[A-Za-z]:\\Users\\[^\\\s"'`]+/g, "<local-user>"],
+  [/[A-Za-z]:\/Users\/[^/\s"'`]+/g, "<local-user>"],
   [/\/(?:Users|home)\/[^/\s"'`]+/g, "<local-user>"],
   [/[A-Za-z]:\\a\\[^\\\s"'`]+/g, "<runner-workspace>"],
 ];

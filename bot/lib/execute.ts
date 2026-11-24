@@ -838,9 +838,34 @@ async function spawnStepProcess(
       stdio: ["ignore", "pipe", "pipe"],
     });
 
+    let forceCloseTimer: NodeJS.Timeout | undefined;
+    const finish = (result: RawSpawnResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (forceCloseTimer) clearTimeout(forceCloseTimer);
+      resolve(result);
+    };
+
     const timer = setTimeout(() => {
       timedOut = true;
       killProcessTree(child.pid);
+      // Guard against orphaned grandchildren holding inherited stdio handles open after kill.
+      forceCloseTimer = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        finish({
+          exitCode: null,
+          signal: "SIGKILL",
+          timedOut: true,
+          spawnError: null,
+          stdout: stdoutCapture.toString(),
+          stderr: stderrCapture.toString(),
+          stdoutCapped: stdoutCapture.capped,
+          stderrCapped: stderrCapture.capped,
+          durationMs: Date.now() - started,
+        });
+      }, 2_000);
     }, timeoutMs);
 
     child.stdout?.on("data", (chunk: Buffer) => {
@@ -852,10 +877,7 @@ async function spawnStepProcess(
     });
 
     child.on("error", (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({
+      finish({
         exitCode: null,
         signal: null,
         timedOut,
@@ -869,10 +891,7 @@ async function spawnStepProcess(
     });
 
     child.on("close", (code, signal) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({
+      finish({
         exitCode: code,
         signal: signal ?? null,
         timedOut,
@@ -1052,6 +1071,15 @@ export async function runQuickstartContract(
       const readmeFull = resolveContainedPath(options.readmeBaseDir, contract.readmePath);
       if (!(await isRealPathContained(options.readmeBaseDir, readmeFull))) {
         throw new Error(`README symlink escapes base directory: "${contract.readmePath}"`);
+      }
+      const readmeStat = await fs.stat(readmeFull);
+      if (!readmeStat.isFile()) {
+        throw new Error(`README path is not a regular file: "${contract.readmePath}"`);
+      }
+      if (readmeStat.size > LIMITS.MAX_CONTRACT_FILE_BYTES) {
+        throw new Error(
+          `README "${contract.readmePath}" exceeds ${LIMITS.MAX_CONTRACT_FILE_BYTES} bytes (got ${readmeStat.size}).`,
+        );
       }
       const readmeContent = await fs.readFile(readmeFull, "utf8");
       const check = checkReadmeDrift(readmeContent, contract);

@@ -17,6 +17,7 @@ import {
   resolveToolchain,
   runQuickstartContract,
 } from "../bot/lib/execute.js";
+import { scrubPublicText } from "../bot/lib/public-output.js";
 
 const REPO_ROOT = process.cwd();
 
@@ -530,6 +531,62 @@ describe("python runtime support", () => {
       if (saved.Path !== undefined) process.env.Path = saved.Path;
       if (saved.PATH !== undefined) process.env.PATH = saved.PATH;
       await fs.rm(emptyDir, { recursive: true, force: true });
+    }
+  });
+
+  it("handles README markers when end marker appears earlier, caps oversized READMEs, and scrubs forward-slash Windows paths", async () => {
+    const contract: QuickstartContract = {
+      schemaVersion: 1,
+      name: "readme-hardening",
+      readmePath: "README.md",
+      files: {},
+      steps: [
+        {
+          id: "ok",
+          command: "node",
+          args: ["-e", "console.log('ok')"],
+          timeoutMs: 10_000,
+          expect: { exitCode: 0, stdoutIncludes: ["ok"] },
+        },
+      ],
+    };
+
+    const proseWithEarlierEnd = [
+      "Wrap blocks with <!-- docrun:end --> at the end.",
+      "<!-- docrun:start -->",
+      "```bash",
+      `node -e "console.log('ok')"`,
+      "```",
+      "<!-- docrun:end -->",
+    ].join("\n");
+    const drift = checkReadmeDrift(proseWithEarlierEnd, contract);
+    assert.equal(drift.ok, true);
+
+    assert.equal(isSafeRelativePath("foo.txt:stream"), false);
+    assert.equal(isSafeRelativePath("a\nb.txt"), false);
+    assert.equal(isSafeRelativePath("foo<bar>.txt"), false);
+
+    // ReDoS regression guard: 40KB of slashes must complete in linear time (< 50ms).
+    const slashStart = Date.now();
+    const slashRes = scrubPublicText("/".repeat(40_000));
+    assert.equal(slashRes.length, 40_000);
+    assert.ok(Date.now() - slashStart < 50, `Expected linear path scrub, took ${Date.now() - slashStart}ms`);
+
+    const scrubbed = scrubPublicText("file:///C:/Users/alice/project/index.js and C:/temp/docrun-abc123/a.js");
+    assert.equal(scrubbed.includes("alice"), false);
+    assert.equal(scrubbed.includes("C:<local-user>"), false);
+    assert.match(scrubbed, /<local-user>/);
+    assert.match(scrubbed, /<temp-workspace>/);
+
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-bigreadme-"));
+    try {
+      await fs.writeFile(path.join(tmpDir, "README.md"), "x".repeat(600_000), "utf8");
+      const result = await runQuickstartContract(contract, { readmeBaseDir: tmpDir });
+      assert.equal(result.status, "failed");
+      assert.equal(result.failureCategory, "docs_drift");
+      assert.match(result.readmeDrift.reason ?? "", /exceeds/i);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
     }
   });
 });
