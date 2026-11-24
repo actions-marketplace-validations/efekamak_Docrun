@@ -29,12 +29,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: efekamak/Docrun@v0.4.2
+      - uses: efekamak/Docrun@v0.4.3
         with:
           contract: docrun.json
 ```
 
-Pin to an exact release tag (`@v0.4.2`) or a full commit SHA for stricter supply-chain control. Do not pin to `@main`.
+Pin to an exact release tag (`@v0.4.3`) or a full commit SHA for stricter supply-chain control. Do not pin to `@main`.
 
 ### Action inputs
 

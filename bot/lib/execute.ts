@@ -79,15 +79,69 @@ export type RunOptions = {
   toolchain?: ToolchainMode;
 };
 
+// Linear-time ANSI CSI, OSC (BEL or ST terminated), and 2-byte ESC stripper.
 // eslint-disable-next-line no-control-regex
-const ANSI_ESCAPE_REGEX = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+const ANSI_ESCAPE_REGEX =
+  /\x1B(?:\][^\x07\x1B]*(?:\x07|\x1B\\)?|\[[0-?]*[ -/]*[@-~]|[@-Z\\^_])|\x9B[0-?]*[ -/]*[@-~]/g;
 
 export function stripAnsi(text: string): string {
   return text.replace(ANSI_ESCAPE_REGEX, "");
 }
 
+const BEGIN_PRIVATE_KEY_REGEX = /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----/g;
+const END_PRIVATE_KEY_REGEX = /-----END [A-Z0-9 ]{0,40}PRIVATE KEY-----/g;
+
+function redactPrivateKeys(text: string): string {
+  if (!text.includes("PRIVATE KEY-----")) {
+    return text;
+  }
+  let out = "";
+  let cursor = 0;
+  let noMoreEndMarkers = false;
+
+  while (cursor < text.length) {
+    BEGIN_PRIVATE_KEY_REGEX.lastIndex = cursor;
+    const beginMatch = BEGIN_PRIVATE_KEY_REGEX.exec(text);
+    if (!beginMatch) break;
+
+    out += text.slice(cursor, beginMatch.index);
+    const afterBegin = beginMatch.index + beginMatch[0].length;
+    let endMatch: RegExpExecArray | null = null;
+    if (!noMoreEndMarkers) {
+      END_PRIVATE_KEY_REGEX.lastIndex = afterBegin;
+      endMatch = END_PRIVATE_KEY_REGEX.exec(text);
+      if (!endMatch) noMoreEndMarkers = true;
+    }
+
+    if (endMatch) {
+      out += "[REDACTED_PRIVATE_KEY]";
+      cursor = endMatch.index + endMatch[0].length;
+      continue;
+    }
+
+    let endIdx = afterBegin;
+    while (endIdx < text.length) {
+      const nl = text.indexOf("\n", endIdx);
+      const lineEnd = nl === -1 ? text.length : nl + 1;
+      const line = text.slice(endIdx, nl === -1 ? text.length : nl).trim();
+      if (
+        line.length === 0 ||
+        /^[A-Za-z0-9+/=]{8,}$/.test(line) ||
+        /^(?:Proc-Type|DEK-Info):/i.test(line)
+      ) {
+        endIdx = lineEnd;
+      } else {
+        break;
+      }
+    }
+    out += "[REDACTED_PRIVATE_KEY]";
+    cursor = endIdx;
+  }
+
+  return cursor === 0 ? text : out + text.slice(cursor);
+}
+
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
-  [/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g, "[REDACTED_PRIVATE_KEY]"],
   [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b/g, "[REDACTED_GH_TOKEN]"],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, "[REDACTED_GH_TOKEN]"],
   [/\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}\b/g, "[REDACTED_API_KEY]"],
@@ -104,7 +158,7 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
 ];
 
 export function redactSecrets(text: string): string {
-  let out = text;
+  let out = redactPrivateKeys(text);
   for (const [pattern, replacement] of SECRET_PATTERNS) {
     out = out.replace(pattern, replacement);
   }
@@ -167,11 +221,8 @@ export function buildMinimalEnv(
 ): NodeJS.ProcessEnv {
   const allowKeys = [
     "PATH",
-    "Path",
     "SystemRoot",
-    "SYSTEMROOT",
     "ComSpec",
-    "COMSPEC",
     "PATHEXT",
     "TEMP",
     "TMP",
@@ -212,13 +263,10 @@ export function buildMinimalEnv(
   if (venvDir) {
     const venvBin =
       process.platform === "win32" ? path.join(venvDir, "Scripts") : path.join(venvDir, "bin");
-    const existingPath = env.PATH ?? env.Path ?? "";
+    const existingPath = env.PATH ?? "";
     const nextPath = existingPath.length > 0 ? `${venvBin}${path.delimiter}${existingPath}` : venvBin;
     env.VIRTUAL_ENV = venvDir;
     env.PATH = nextPath;
-    if (process.platform === "win32" && env.Path !== undefined) {
-      env.Path = nextPath;
-    }
   }
   return env;
 }
@@ -519,6 +567,7 @@ export async function findUvOnPath(): Promise<string | null> {
 async function createPythonWorkspaceVenv(
   pythonInfo: { path: string; version: string } | null,
   workspaceDir: string,
+  timeoutMs: number = VENV_CREATE_TIMEOUT_MS,
 ): Promise<PythonWorkspaceEnv> {
   if (!pythonInfo) {
     return {
@@ -562,8 +611,8 @@ async function createPythonWorkspaceVenv(
 
     timer = setTimeout(() => {
       killProcessTree(child.pid);
-      finish({ ok: false, error: `Creating Python virtual environment timed out after ${VENV_CREATE_TIMEOUT_MS}ms.` });
-    }, VENV_CREATE_TIMEOUT_MS);
+      finish({ ok: false, error: `Creating Python virtual environment timed out after ${timeoutMs}ms.` });
+    }, timeoutMs);
 
     child.stderr?.on("data", (chunk: Buffer) => {
       if (stderr.length < 4096) {
@@ -1123,7 +1172,11 @@ export async function runQuickstartContract(
     }
 
     if (usesPython) {
-      pythonEnv = await createPythonWorkspaceVenv(pythonInfo, workspaceDir);
+      const venvBudgetMs = Math.min(
+        VENV_CREATE_TIMEOUT_MS,
+        Math.max(1_000, maxRunTimeoutMs - (Date.now() - startedMs)),
+      );
+      pythonEnv = await createPythonWorkspaceVenv(pythonInfo, workspaceDir, venvBudgetMs);
     }
 
     for (const step of contract.steps) {

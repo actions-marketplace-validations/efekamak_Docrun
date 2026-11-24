@@ -491,6 +491,14 @@ describe("catalog runner and status site integration", () => {
       const serializedNorm = JSON.stringify(normalizedLeaked);
       assert.equal(serializedNorm.includes("ghs_SECRETTOKEN1234567890123456"), false);
       assert.equal(serializedNorm.includes("alice"), false);
+
+      // Oversized catalog JSON must be rejected before JSON.parse.
+      await fs.writeFile(path.join(tmpBase, "huge-catalog.json"), " ".repeat(600_000), "utf8");
+      const hugeOutcome = await loadAndValidateCatalog(tmpBase, "huge-catalog.json");
+      assert.equal(hugeOutcome.ok, false);
+      if (!hugeOutcome.ok) {
+        assert.match(hugeOutcome.errors[0] ?? "", /exceeds/i);
+      }
     } finally {
       await fs.rm(tmpBase, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }

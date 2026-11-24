@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as z from "zod/v4";
 import {
   LIMITS,
+  isRealPathContained,
   isSafeRelativePath,
   loadContractFile,
   resolveContainedPath,
@@ -222,6 +223,27 @@ export async function loadAndValidateCatalog(
 
   let rawText: string;
   try {
+    const stat = await fs.stat(fullPath);
+    if (!stat.isFile()) {
+      return {
+        ok: false,
+        errors: [`Catalog path "${catalogRelPath}" is not a regular file.`],
+      };
+    }
+    if (stat.size > LIMITS.MAX_CONTRACT_FILE_BYTES) {
+      return {
+        ok: false,
+        errors: [
+          `Catalog "${catalogRelPath}" exceeds ${LIMITS.MAX_CONTRACT_FILE_BYTES} bytes (got ${stat.size}).`,
+        ],
+      };
+    }
+    if (!(await isRealPathContained(baseDir, fullPath))) {
+      return {
+        ok: false,
+        errors: [`Catalog symlink escapes base directory: "${catalogRelPath}".`],
+      };
+    }
     rawText = await fs.readFile(fullPath, "utf8");
   } catch (err) {
     return {

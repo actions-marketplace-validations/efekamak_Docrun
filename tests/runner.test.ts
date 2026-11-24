@@ -16,6 +16,7 @@ import {
   redactSecrets,
   resolveToolchain,
   runQuickstartContract,
+  stripAnsi,
 } from "../bot/lib/execute.js";
 import { scrubPublicText } from "../bot/lib/public-output.js";
 
@@ -577,6 +578,22 @@ describe("python runtime support", () => {
     assert.equal(scrubbed.includes("C:<local-user>"), false);
     assert.match(scrubbed, /<local-user>/);
     assert.match(scrubbed, /<temp-workspace>/);
+
+    // Parenthesized Windows path must preserve closing parenthesis and angle brackets.
+    assert.equal(scrubPublicText("at (C:\\Users\\alice) and <C:/Users/bob>"), "at (<local-user>) and <<local-user>>");
+
+    // OSC 8 hyperlinks must be stripped cleanly without leaving URL garbage.
+    assert.equal(stripAnsi("\x1b]8;;https://example.com\x07link\x1b]8;;\x07"), "link");
+
+    // Truncated/unclosed PEM private keys must be redacted and remain strictly linear (ReDoS guard).
+    const truncatedPem = redactSecrets("-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1234567890\nnormal line");
+    assert.equal(truncatedPem.includes("MIIEowIBAAKCAQEA"), false);
+    assert.match(truncatedPem, /\[REDACTED_PRIVATE_KEY\]/);
+    assert.match(truncatedPem, /normal line/);
+
+    const pemStart = performance.now();
+    redactSecrets("-----BEGIN PRIVATE KEY-----".repeat(4_000));
+    assert.ok(performance.now() - pemStart < 50, "PEM redaction must stay linear");
 
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-bigreadme-"));
     try {
