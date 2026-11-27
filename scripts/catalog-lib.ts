@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as z from "zod/v4";
 import {
   LIMITS,
+  assertNoUncSymlinkInRelativePath,
   isRealPathContained,
   isSafeRelativePath,
   loadContractFile,
@@ -223,6 +224,7 @@ export async function loadAndValidateCatalog(
 
   let rawText: string;
   try {
+    await assertNoUncSymlinkInRelativePath(baseDir, catalogRelPath);
     const stat = await fs.stat(fullPath);
     if (!stat.isFile()) {
       return {

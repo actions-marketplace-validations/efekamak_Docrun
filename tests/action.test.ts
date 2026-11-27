@@ -707,4 +707,19 @@ describe("action runner and bundled entrypoint end-to-end", () => {
       assert.match(summary, /Python \d+\.\d+\.\d+/);
     });
   });
+
+  it("rejects Windows UNC and device paths in GITHUB_WORKSPACE and RUNNER_TEMP before filesystem access", async () => {
+    const t0 = performance.now();
+    const uncWorkspace = await resolveActionConfig(
+      { contract: "docrun.json", workingDirectory: "." },
+      { GITHUB_WORKSPACE: "\\\\192.0.2.1\\share\\ws", RUNNER_TEMP: os.tmpdir() },
+    );
+    assert.equal(uncWorkspace.ok, false);
+    const uncTemp = await resolveActionConfig(
+      { contract: "docrun.json", workingDirectory: "." },
+      { GITHUB_WORKSPACE: os.tmpdir(), RUNNER_TEMP: "//192.0.2.1/share/tmp" },
+    );
+    assert.equal(uncTemp.ok, false);
+    assert.ok(performance.now() - t0 < 500, "UNC rejection must happen syntactically before SMB stat");
+  });
 });

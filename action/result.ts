@@ -1,6 +1,10 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
-import { isRealPathContained, resolveContainedPath } from "../bot/lib/contract.js";
+import {
+  isRealPathContained,
+  isWindowsUncOrDevicePath,
+  resolveContainedPath,
+} from "../bot/lib/contract.js";
 import type { AssertionResult, QuickstartRunResult, StepResult } from "../bot/lib/execute.js";
 import {
   sanitizePublicExcerpt,
@@ -126,6 +130,9 @@ export async function writeActionResultFile(
   runnerTempDir: string,
   sanitizedResult: QuickstartRunResult,
 ): Promise<string> {
+  if (isWindowsUncOrDevicePath(runnerTempDir)) {
+    throw new Error("RUNNER_TEMP cannot be a Windows UNC or device path.");
+  }
   const realTempDir = await fs.realpath(runnerTempDir);
   const resultsDir = resolveContainedPath(realTempDir, "docrun");
   await fs.mkdir(resultsDir, { recursive: true, mode: 0o700 });

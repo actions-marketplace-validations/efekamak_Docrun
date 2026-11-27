@@ -35,6 +35,11 @@ const WINDOWS_RESERVED_NAME_REGEX = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.
 const CONTROL_CHAR_REGEX = /[\x00-\x1f\x7f]/;
 const WINDOWS_FORBIDDEN_SEGMENT_CHAR_REGEX = /[<>:"|?*]/;
 
+export function isWindowsUncOrDevicePath(candidate: string): boolean {
+  const norm = candidate.trim().replace(/\//g, "\\");
+  return norm.startsWith("\\\\");
+}
+
 export function isSafeRelativePath(candidate: string): boolean {
   if (candidate.length === 0 || candidate.length > 240 || CONTROL_CHAR_REGEX.test(candidate)) {
     return false;
@@ -64,26 +69,68 @@ export function isSafeRelativePath(candidate: string): boolean {
   return true;
 }
 
+function isOutsideRelative(rel: string): boolean {
+  return rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+}
+
 export function resolveContainedPath(baseDir: string, relativePath: string): string {
+  if (isWindowsUncOrDevicePath(baseDir)) {
+    throw new Error(`Unsafe base directory (Windows UNC/device path): "${baseDir}"`);
+  }
   if (!isSafeRelativePath(relativePath)) {
     throw new Error(`Unsafe relative path: "${relativePath}"`);
   }
   const resolvedBase = path.resolve(baseDir);
   const resolvedTarget = path.resolve(resolvedBase, relativePath);
   const rel = path.relative(resolvedBase, resolvedTarget);
-  if (rel.startsWith("..") || path.isAbsolute(rel) || rel === "") {
+  if (isOutsideRelative(rel) || rel === "") {
     throw new Error(`Path escapes base directory: "${relativePath}"`);
   }
   return resolvedTarget;
 }
 
+export async function assertNoUncSymlinkInRelativePath(
+  baseDir: string,
+  relativePath: string,
+): Promise<void> {
+  if (isWindowsUncOrDevicePath(baseDir)) {
+    throw new Error(`Base directory cannot be a Windows UNC/device path.`);
+  }
+  const resolvedBase = path.resolve(baseDir);
+  const segments = relativePath.replace(/\\/g, "/").split("/").filter(Boolean);
+  let current = resolvedBase;
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    let lst;
+    try {
+      lst = await fs.lstat(current);
+    } catch {
+      return;
+    }
+    if (lst.isSymbolicLink()) {
+      let target: string;
+      try {
+        target = await fs.readlink(current);
+      } catch {
+        throw new Error(`Unreadable symlink escapes base directory: "${relativePath}"`);
+      }
+      if (isWindowsUncOrDevicePath(target)) {
+        throw new Error(`Symlink escapes workspace via Windows UNC/device target: "${relativePath}"`);
+      }
+    }
+  }
+}
+
 export async function isRealPathContained(baseDir: string, targetPath: string): Promise<boolean> {
+  if (isWindowsUncOrDevicePath(baseDir) || isWindowsUncOrDevicePath(targetPath)) {
+    return false;
+  }
   const [realBase, realTarget] = await Promise.all([
     fs.realpath(baseDir),
     fs.realpath(targetPath),
   ]);
   const rel = path.relative(realBase, realTarget);
-  return !rel.startsWith("..") && !path.isAbsolute(rel) && rel !== "";
+  return !isOutsideRelative(rel) && rel !== "";
 }
 
 const SafeRelativePathSchema = z
@@ -204,6 +251,7 @@ export async function loadContractFile(
 
   let text: string;
   try {
+    await assertNoUncSymlinkInRelativePath(baseDir, contractPath);
     const stat = await fs.stat(fullPath);
     if (!stat.isFile()) {
       return {
