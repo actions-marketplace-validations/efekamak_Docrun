@@ -6,7 +6,9 @@ import { describe, it } from "node:test";
 import {
   checkReadmeDrift,
   isSafeRelativePath,
+  isWindowsUncOrDevicePath,
   loadContractFile,
+  resolveContainedPath,
   validateContract,
   type QuickstartContract,
 } from "../bot/lib/contract.js";
@@ -594,6 +596,29 @@ describe("python runtime support", () => {
     const pemStart = performance.now();
     redactSecrets("-----BEGIN PRIVATE KEY-----".repeat(4_000));
     assert.ok(performance.now() - pemStart < 50, "PEM redaction must stay linear");
+
+    // Prefixed env secret names, Basic auth, ASIA temp AWS keys, and short truncated PEM lines.
+    assert.match(redactSecrets("DB_PASSWORD=supersecretvalue"), /DB_PASSWORD=\[REDACTED\]/);
+    assert.match(
+      redactSecrets("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
+      /AWS_SECRET_ACCESS_KEY=\[REDACTED\]/,
+    );
+    assert.match(redactSecrets("GITHUB_TOKEN=opaque-installation-token"), /GITHUB_TOKEN=\[REDACTED\]/);
+    assert.match(redactSecrets("Authorization: Basic dXNlcjpwYXNz"), /Basic \[REDACTED\]/);
+    assert.match(redactSecrets("ASIAIOSFODNN7EXAMPLE"), /\[REDACTED_AWS_KEY\]/);
+    const shortPem = redactSecrets("-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\nab==\nSECRETREST");
+    assert.equal(shortPem.includes("ab=="), false);
+    assert.equal(shortPem.includes("SECRETREST"), false);
+
+    // Windows UNC / device path detection and valid ..-prefixed filename containment.
+    assert.equal(isWindowsUncOrDevicePath("\\\\attacker\\share\\x"), true);
+    assert.equal(isWindowsUncOrDevicePath("//attacker/share/x"), true);
+    assert.equal(isWindowsUncOrDevicePath("\\\\?\\UNC\\attacker\\share"), true);
+    assert.equal(isWindowsUncOrDevicePath("\\\\.\\pipe\\foo"), true);
+    assert.equal(isWindowsUncOrDevicePath("C:\\workspace"), false);
+    assert.equal(isSafeRelativePath("..secret.txt"), true);
+    const containedDotDotName = resolveContainedPath(os.tmpdir(), "..secret.txt");
+    assert.ok(containedDotDotName.endsWith("..secret.txt"));
 
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "docrun-bigreadme-"));
     try {

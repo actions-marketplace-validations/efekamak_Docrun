@@ -1,7 +1,9 @@
 import * as fs from "node:fs/promises";
 import {
+  assertNoUncSymlinkInRelativePath,
   isRealPathContained,
   isSafeRelativePath,
+  isWindowsUncOrDevicePath,
   resolveContainedPath,
 } from "../bot/lib/contract.js";
 
@@ -42,7 +44,7 @@ async function resolveExistingDirectory(
   envName: string,
 ): Promise<{ ok: true; dir: string } | { ok: false; message: string }> {
   const trimmed = rawPath?.trim() ?? "";
-  if (trimmed.length === 0 || trimmed.includes("\0")) {
+  if (trimmed.length === 0 || trimmed.includes("\0") || isWindowsUncOrDevicePath(trimmed)) {
     return {
       ok: false,
       message: `Required environment variable ${envName} is missing or invalid.`,
@@ -175,6 +177,19 @@ export async function resolveActionConfig(
         runnerTempDir,
         workspaceDir,
         message: "Input 'working-directory' escapes GITHUB_WORKSPACE.",
+      };
+    }
+
+    try {
+      await assertNoUncSymlinkInRelativePath(workspaceDir, workingDirectoryInput);
+    } catch {
+      return {
+        ok: false,
+        kind: "invalid_input",
+        contractPath: contractInput,
+        runnerTempDir,
+        workspaceDir,
+        message: `Input 'working-directory' symlink escapes GITHUB_WORKSPACE: "${workingDirectoryInput}".`,
       };
     }
 

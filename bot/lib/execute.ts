@@ -6,8 +6,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   LIMITS,
+  assertNoUncSymlinkInRelativePath,
   checkReadmeDrift,
   isRealPathContained,
+  isWindowsUncOrDevicePath,
   resolveContainedPath,
   type AllowedCommand,
   type FailureCategory,
@@ -126,7 +128,7 @@ function redactPrivateKeys(text: string): string {
       const line = text.slice(endIdx, nl === -1 ? text.length : nl).trim();
       if (
         line.length === 0 ||
-        /^[A-Za-z0-9+/=]{8,}$/.test(line) ||
+        /^[A-Za-z0-9+/=]{2,}$/.test(line) ||
         /^(?:Proc-Type|DEK-Info):/i.test(line)
       ) {
         endIdx = lineEnd;
@@ -146,13 +148,14 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, "[REDACTED_GH_TOKEN]"],
   [/\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}\b/g, "[REDACTED_API_KEY]"],
   [/\bnpm_[A-Za-z0-9]{20,}\b/g, "[REDACTED_NPM_TOKEN]"],
-  [/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, "[REDACTED_SLACK_TOKEN]"],
-  [/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED_AWS_KEY]"],
+  [/\bxox[baprsce]-[A-Za-z0-9-]{10,}\b/g, "[REDACTED_SLACK_TOKEN]"],
+  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "[REDACTED_AWS_KEY]"],
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, "[REDACTED_JWT]"],
   [/(https?:\/\/[^/\s:@]+:)([^/\s@]+)(@)/gi, "$1[REDACTED]$3"],
   [/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}\b/gi, "$1[REDACTED]"],
+  [/\b(Basic\s+)[A-Za-z0-9+/=]{8,}/gi, "$1[REDACTED]"],
   [
-    /(\b(?:_authToken|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|secret|password|token)\s*[:=]\s*['"]?)([^\s'"`,;]{6,})(['"]?)/gi,
+    /(\b[A-Za-z0-9_]*(?:_authToken|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|secret[_-]?access[_-]?key|secret|password|token)\s*[:=]\s*['"]?)([^\s'"`,;]{6,})(['"]?)/gi,
     "$1[REDACTED]$3",
   ],
 ];
@@ -171,9 +174,9 @@ function sliceUtf8Safe(buf: Buffer, start: number, end: number): string {
   while (safeStart < end && (buf[safeStart] & 0xc0) === 0x80) {
     safeStart += 1;
   }
-  // Pull end back if it splits a multi-byte UTF-8 sequence.
+  // Pull end back if it splits a multi-byte UTF-8 sequence (even at buffer end).
   let safeEnd = end;
-  if (safeEnd > safeStart && safeEnd < buf.length) {
+  if (safeEnd > safeStart && safeEnd <= buf.length) {
     let lead = safeEnd - 1;
     while (lead > safeStart && (buf[lead] & 0xc0) === 0x80) {
       lead -= 1;
@@ -258,7 +261,9 @@ export function buildMinimalEnv(
     env.npm_config_cache = path.join(workspaceDir, ".npm-cache");
     env.npm_config_userconfig = path.join(workspaceDir, ".npmrc-empty");
     env.PIP_CACHE_DIR = path.join(workspaceDir, ".pip-cache");
+    env.PIP_CONFIG_FILE = path.join(workspaceDir, ".pip-empty.ini");
     env.UV_CACHE_DIR = path.join(workspaceDir, ".uv-cache");
+    env.UV_NO_CONFIG = "1";
   }
   if (venvDir) {
     const venvBin =
@@ -318,7 +323,12 @@ function absolutePathDirs(): string[] {
   const seen = new Set<string>();
   for (const rawDir of pathEnv.split(path.delimiter)) {
     const dir = rawDir.trim().replace(/^"(.*)"$/, "$1");
-    if (dir.length === 0 || seen.has(dir) || !path.isAbsolute(dir)) {
+    if (
+      dir.length === 0 ||
+      seen.has(dir) ||
+      !path.isAbsolute(dir) ||
+      isWindowsUncOrDevicePath(dir)
+    ) {
       continue;
     }
     seen.add(dir);
@@ -530,7 +540,7 @@ export async function findPythonOnPath(): Promise<{ path: string; version: strin
   const names = process.platform === "win32" ? ["python.exe", "python3.exe"] : ["python3", "python"];
   for (const dir of absolutePathDirs()) {
     if (process.platform === "win32") {
-      const normalizedDir = dir.replace(/\\/g, "/").toLowerCase();
+      const normalizedDir = dir.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
       if (normalizedDir.endsWith("/microsoft/windowsapps")) {
         continue;
       }
@@ -710,13 +720,30 @@ function killProcessTree(pid: number | undefined): void {
   }
   if (process.platform === "win32") {
     try {
-      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      const taskkillPath = path.join(
+        process.env.SystemRoot || "C:\\Windows",
+        "System32",
+        "taskkill.exe",
+      );
+      const killer = spawn(taskkillPath, ["/PID", String(pid), "/T", "/F"], {
+        env: buildMinimalEnv(),
         shell: false,
         stdio: "ignore",
       });
+      killer.on("error", () => {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Process already exited.
+        }
+      });
       killer.unref();
     } catch {
-      // Best-effort cleanup on Windows.
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Best-effort cleanup on Windows.
+      }
     }
     return;
   }
@@ -824,8 +851,8 @@ class BoundedStreamCapture {
       return Buffer.concat([headBuf, tailBuf]).toString("utf8");
     }
     const omitted = Math.max(0, this.totalBytes - this.headBytes - this.tailBytes);
-    const head = sliceUtf8Safe(headBuf, 0, headBuf.length);
-    const tail = sliceUtf8Safe(tailBuf, 0, tailBuf.length);
+    const head = redactSecrets(stripAnsi(sliceUtf8Safe(headBuf, 0, headBuf.length)));
+    const tail = redactSecrets(stripAnsi(sliceUtf8Safe(tailBuf, 0, tailBuf.length)));
     return `${head}\n... [stream capped: ${omitted} bytes omitted] ...\n${tail}`;
   }
 }
@@ -1118,6 +1145,7 @@ export async function runQuickstartContract(
     readmeDrift.checked = true;
     try {
       const readmeFull = resolveContainedPath(options.readmeBaseDir, contract.readmePath);
+      await assertNoUncSymlinkInRelativePath(options.readmeBaseDir, contract.readmePath);
       if (!(await isRealPathContained(options.readmeBaseDir, readmeFull))) {
         throw new Error(`README symlink escapes base directory: "${contract.readmePath}"`);
       }
